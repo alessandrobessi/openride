@@ -171,11 +171,14 @@ describe('v0.1 calibration', () => {
 		const v = s.forwardSpeedMps;
 		const radius = v / Math.max(Math.abs(s.yawRateRadS), 1e-3);
 		const ideal = Math.atan((v * v) / (radius * G));
-		expect(s.rollRad).toBeGreaterThan(0); // leans into the (positive) turn
-		// Within ~10° of the kinematic ideal — the reduced-order lateral model
-		// (MOTORCYCLE-PHYSICS.md §31) over-leans a little; tightening this is
-		// calibration debt.
-		expect(Math.abs(s.rollRad - ideal)).toBeLessThan((10 * Math.PI) / 180);
+		// +0.5 is a left turn: it yaws left (positive) and leans *into* it — a
+		// left lean is a negative roll in this frame.
+		expect(s.yawRateRadS).toBeGreaterThan(0);
+		expect(s.rollRad).toBeLessThan(0);
+		// Lean magnitude within ~10° of the kinematic ideal — the reduced-order
+		// lateral model (MOTORCYCLE-PHYSICS.md §31) over-leans a little; tightening
+		// this is calibration debt.
+		expect(Math.abs(Math.abs(s.rollRad) - ideal)).toBeLessThan((10 * Math.PI) / 180);
 		rig.world.dispose();
 	});
 

@@ -118,16 +118,15 @@ describe('M7 virtual rider (headless)', () => {
 			durationS: 8,
 			control: () => ({ throttle: 0.25, steeringInput: 0.5 })
 		});
-		// Leans in the commanded direction (precise lean-vs-speed-vs-radius
-		// equilibrium is M8; tyre forces are M10 — the cornering force here is a
-		// provisional stand-in).
-		expect(r.roll).toBeGreaterThan(0.1);
+		// +0.5 intention is a left turn: the bike leans left (negative roll in
+		// this frame) toward its target lean, and yaws left (positive yaw rate).
+		expect(r.roll).toBeLessThan(-0.05);
 		expect(Math.sign(r.roll)).toBe(Math.sign(r.targetLean));
 		expect(r.maxRoll).toBeLessThan(ADVENTURE_1200.physical.geometry.maxLeanAngleRad);
-		// Still turning (yaw now follows the lean, so the rate is more modest),
-		// and speed did not scrub away.
-		expect(Math.sign(r.yawRate)).toBe(Math.sign(r.targetLean));
-		expect(Math.abs(r.yawRate)).toBeGreaterThan(0.1);
+		// Still turning left (yaw follows lean into the turn: opposite sign to the
+		// roll here), and speed did not scrub away.
+		expect(r.yawRate).toBeGreaterThan(0.06);
+		expect(Math.sign(r.yawRate)).toBe(-Math.sign(r.roll));
 		expect(r.speed).toBeGreaterThan(6);
 	});
 

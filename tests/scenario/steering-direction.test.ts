@@ -18,7 +18,9 @@ const NEUTRAL = { throttle: 0, clutch: 1, frontBrake: 0, rearBrake: 0, steeringI
  * (and that landmark) swings to your right, and vice versa. This can't be fooled
  * by world-frame sign conventions the way a bare `velocity.x` check can.
  */
-async function landmarkSideAfterSteering(steeringInput: number): Promise<number> {
+async function steerAndObserve(
+	steeringInput: number
+): Promise<{ landmarkSide: number; leanSide: number }> {
 	const rig = await createMotorcycleRig(ADVENTURE_1200, {
 		assists: ASSISTS_OFF,
 		groundHalfSizeM: 40000
@@ -55,30 +57,41 @@ async function landmarkSideAfterSteering(steeringInput: number): Promise<number>
 	const q1 = new THREE.Quaternion(t1.rotation.x, t1.rotation.y, t1.rotation.z, t1.rotation.w);
 	cam.update(p1, q1, FRAME_S);
 	const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.camera.quaternion);
+	// The bike's own up-vector: +x world is the rider's left, so up.x > 0 = lean left.
+	const bikeUpX = new THREE.Vector3(0, 1, 0).applyQuaternion(q1).x;
 	rig.world.dispose();
 
-	// > 0 : the landmark is now to the rider's right  (rider turned left)
-	// < 0 : the landmark is now to the rider's left   (rider turned right)
-	return landmark.clone().sub(p1).normalize().dot(camRight);
+	return {
+		// > 0 : landmark now to the rider's right  (turned left);  < 0 : turned right
+		landmarkSide: landmark.clone().sub(p1).normalize().dot(camRight),
+		// > 0 : leaned left;  < 0 : leaned right
+		leanSide: bikeUpX
+	};
 }
 
-describe('steering direction — the rider turns the way they steer', () => {
-	it('the left keys steer left (a landmark dead ahead swings to the rider’s right)', async () => {
+describe('steering direction — the rider turns and leans the way they steer', () => {
+	it('the left keys turn left and lean left', async () => {
 		const left = analogFromHeldKeys(new Set(['a']));
 		expect(left.steeringInput).toBe(1);
-		expect(await landmarkSideAfterSteering(left.steeringInput * 0.6)).toBeGreaterThan(0.05);
+		const r = await steerAndObserve(left.steeringInput * 0.6);
+		expect(r.landmarkSide).toBeGreaterThan(0.05); // landmark swung right → turned left
+		expect(r.leanSide).toBeGreaterThan(0.1); // leaned left (into the turn)
 	});
 
-	it('the right keys steer right (a landmark dead ahead swings to the rider’s left)', async () => {
+	it('the right keys turn right and lean right', async () => {
 		const right = analogFromHeldKeys(new Set(['d']));
 		expect(right.steeringInput).toBe(-1);
-		expect(await landmarkSideAfterSteering(right.steeringInput * 0.6)).toBeLessThan(-0.05);
+		const r = await steerAndObserve(right.steeringInput * 0.6);
+		expect(r.landmarkSide).toBeLessThan(-0.05); // turned right
+		expect(r.leanSide).toBeLessThan(-0.1); // leaned right
 	});
 
-	it('the gamepad stick agrees: pushed right steers right', async () => {
+	it('the gamepad stick agrees: pushed right turns and leans right', async () => {
 		const stickRight = mapGamepad({ axes: [0.9, 0, 0, 0], buttons: [] }, DEFAULT_GAMEPAD_CONFIG)
 			.controls.steeringInput;
 		expect(stickRight).toBeLessThan(0); // same sign as the right keys
-		expect(await landmarkSideAfterSteering(stickRight)).toBeLessThan(-0.05);
+		const r = await steerAndObserve(stickRight);
+		expect(r.landmarkSide).toBeLessThan(-0.05);
+		expect(r.leanSide).toBeLessThan(-0.1);
 	});
 });

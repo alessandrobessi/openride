@@ -24,9 +24,16 @@ describe('countersteer', () => {
 		expect(Math.abs(settled.rollMomentNm)).toBeLessThan(Math.abs(turningIn.rollMomentNm) * 0.1);
 	});
 
-	it('the handlebars sit opposite to the turn during turn-in', () => {
-		const c = countersteer({ ...base, leanRad: 0, targetLeanRad: 0.4 });
-		expect(c.steerAngleRad).toBeLessThan(0); // steering right to turn left-of-sign? opposite the +lean
+	it('the handlebars sit opposite to the established turn during turn-in', () => {
+		// The geometric steer angle of the settled turn has the opposite sign to
+		// the lean error that drives turn-in, so the counter angle follows the
+		// lean-error sign: +error while turning in one way, −error the other.
+		expect(countersteer({ ...base, leanRad: 0, targetLeanRad: 0.4 }).steerAngleRad).toBeGreaterThan(
+			0
+		);
+		expect(countersteer({ ...base, leanRad: 0, targetLeanRad: -0.4 }).steerAngleRad).toBeLessThan(
+			0
+		);
 	});
 
 	it('the counter angle relaxes once the lean is established', () => {

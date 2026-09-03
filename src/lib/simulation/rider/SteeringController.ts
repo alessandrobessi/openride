@@ -67,9 +67,12 @@ export class SteeringController {
 			(1 - highSpeedBlend) * (us * LOW_SPEED_YAW_GAIN) + highSpeedBlend * targetYawRateRadS;
 
 		// Target lean DERIVED from the cornering demand — varies with speed/radius.
+		// The rider leans *into* the turn: a left turn (positive yaw rate in this
+		// frame) is a left lean, which is a negative roll about the forward axis
+		// (positive roll tips the rider's left side up). Hence the sign.
 		const ayTarget = speed * targetYawRateRadS;
 		const commandedLeanRad = clamp(
-			leanFromLateralAccelRad(ayTarget),
+			-leanFromLateralAccelRad(ayTarget),
 			-this.maxLeanRad,
 			this.maxLeanRad
 		);

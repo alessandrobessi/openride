@@ -661,8 +661,10 @@ export class Motorcycle {
 
 		// Yaw follows the lean the bike actually has; a direct term only at
 		// parking speed. Tracked with a soft time constant so heading lags lean.
+		// A left lean (negative roll here) drives a left turn (positive yaw), so
+		// the yaw is the *negative* of g·tan(roll)/v.
 		const leanLedYawRateRadS =
-			(GRAVITY_MPS2 * Math.tan(this.state.rollRad)) / Math.max(Math.abs(speedMps), 1);
+			(-GRAVITY_MPS2 * Math.tan(this.state.rollRad)) / Math.max(Math.abs(speedMps), 1);
 		const targetYawRateRadS =
 			(1 - cs.speedWeight) * cmd.targetYawRateRadS + cs.speedWeight * leanLedYawRateRadS;
 		const yawTorqueNm = clamp(

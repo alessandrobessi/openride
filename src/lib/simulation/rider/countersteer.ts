@@ -48,11 +48,13 @@ export function countersteer(params: {
 	// Turn-in roll moment: proportional to the lean error, fades as it closes.
 	const rollMomentNm = profile.countersteerGain * ROLL_MOMENT_SCALE * leanError * speedWeight;
 
-	// How hard the rider is still trying to change the lean (positive = turning
-	// in). While turning in, the handlebars sit opposite to the turn.
+	// How hard the rider is still trying to change the lean. While turning in the
+	// handlebars sit *opposite* to the turn: the geometric steer angle for the
+	// established turn has the opposite sign to the lean error driving turn-in,
+	// so the countersteer telemetry follows the lean-error sign directly.
 	const turnInDemand = leanError - 0.2 * leanRateRadS;
 	const steerAngleRad =
-		-Math.sign(turnInDemand) *
+		Math.sign(turnInDemand) *
 		Math.min(Math.abs(turnInDemand), 1) *
 		COUNTER_ANGLE_SCALE *
 		speedWeight;

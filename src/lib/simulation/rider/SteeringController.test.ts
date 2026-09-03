@@ -20,14 +20,14 @@ describe('SteeringController', () => {
 	});
 
 	it('derives more lean at higher speed for the same turn intention (M8)', () => {
-		const slow = make().command(0.6, 8, SETTLE_DT).targetLeanRad;
-		const fast = make().command(0.6, 20, SETTLE_DT).targetLeanRad;
+		const slow = Math.abs(make().command(0.6, 8, SETTLE_DT).targetLeanRad);
+		const fast = Math.abs(make().command(0.6, 20, SETTLE_DT).targetLeanRad);
 		expect(fast).toBeGreaterThan(slow);
 	});
 
 	it('derives more lean as the turn tightens at a fixed speed', () => {
-		const gentle = make().command(0.3, 15, SETTLE_DT).targetLeanRad;
-		const hard = make().command(0.9, 15, SETTLE_DT).targetLeanRad;
+		const gentle = Math.abs(make().command(0.3, 15, SETTLE_DT).targetLeanRad);
+		const hard = Math.abs(make().command(0.9, 15, SETTLE_DT).targetLeanRad);
 		expect(hard).toBeGreaterThan(gentle);
 	});
 
@@ -39,7 +39,7 @@ describe('SteeringController', () => {
 	});
 
 	it('slew-limits the target lean so a step input ramps in', () => {
-		const afterOneStep = make().command(1, 20, 1 / 120).targetLeanRad;
+		const afterOneStep = Math.abs(make().command(1, 20, 1 / 120).targetLeanRad);
 		expect(afterOneStep).toBeGreaterThan(0);
 		expect(afterOneStep).toBeLessThan(0.02); // ~0.9 rad/s · (1/120) s
 	});
