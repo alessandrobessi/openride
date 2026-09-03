@@ -23,10 +23,11 @@ describe('keyboard map', () => {
 		expect(analogFromHeldKeys(new Set(['w']))).toMatchObject({ throttle: 1, frontBrake: 0 });
 		expect(analogFromHeldKeys(new Set(['arrowup']))).toMatchObject({ throttle: 1 });
 		expect(analogFromHeldKeys(new Set(['s']))).toMatchObject({ frontBrake: 1, rearBrake: 1 });
-		// Positive steers left (rider-model convention): left keys → +1.
-		expect(analogFromHeldKeys(new Set(['a'])).steeringInput).toBe(1);
-		expect(analogFromHeldKeys(new Set(['arrowleft'])).steeringInput).toBe(1);
-		expect(analogFromHeldKeys(new Set(['d'])).steeringInput).toBe(-1);
+		// Positive steers right (matches the sim): left keys → −1, right keys → +1.
+		expect(analogFromHeldKeys(new Set(['a'])).steeringInput).toBe(-1);
+		expect(analogFromHeldKeys(new Set(['arrowleft'])).steeringInput).toBe(-1);
+		expect(analogFromHeldKeys(new Set(['d'])).steeringInput).toBe(1);
+		expect(analogFromHeldKeys(new Set(['arrowright'])).steeringInput).toBe(1);
 		expect(analogFromHeldKeys(new Set(['a', 'd'])).steeringInput).toBe(0);
 	});
 

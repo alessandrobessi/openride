@@ -92,10 +92,10 @@ export function mapGamepad(reading: GamepadReading, config: GamepadConfig): Game
 	const clutchPull = clamp01(Math.max(btn(reading, 4).value, btn(reading, 4).pressed ? 1 : 0));
 	const clutch = 1 - clutchPull;
 
-	// `steeringInput` follows the rider model: positive steers LEFT. Stick-right
-	// is axes[0] > 0, so negate to make pushing right steer right.
+	// `steeringInput` positive steers right (verified against the sim); stick-right
+	// is axes[0] > 0, so the sign passes straight through.
 	const [sx] = radialDeadzone(axis(reading, 0), axis(reading, 1), config.stickDeadzone);
-	let steeringInput = -expo(sx, config.steerExpo) * config.steerSensitivity;
+	let steeringInput = expo(sx, config.steerExpo) * config.steerSensitivity;
 	if (config.invertSteer) steeringInput = -steeringInput;
 	steeringInput = clampSigned(steeringInput);
 
