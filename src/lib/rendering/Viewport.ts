@@ -11,6 +11,7 @@ import {
 	type MotorcycleRig
 } from '$lib/simulation/physics/createMotorcycleRig';
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
+import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 
 /**
  * Owns the WebGL renderer, the test scene, the inspection camera, the fixed-step
@@ -26,11 +27,20 @@ export interface ViewportStats {
 	physicsHz: number;
 	drawCalls: number;
 	triangles: number;
+	speedKmh: number;
 	frontLoadN: number;
 	rearLoadN: number;
 }
 
 const FIXED_DT_S = 1 / 120;
+
+const NEUTRAL_CONTROLS: MotorcycleControls = {
+	throttle: 0,
+	clutch: 1,
+	frontBrake: 0,
+	rearBrake: 0,
+	steeringInput: 0
+};
 
 export class Viewport {
 	readonly renderer: THREE.WebGLRenderer;
@@ -43,6 +53,7 @@ export class Viewport {
 
 	private readonly simLoop = new SimulationLoop({ fixedDtS: FIXED_DT_S });
 	private rig: MotorcycleRig | undefined;
+	private readonly controls: MotorcycleControls = { ...NEUTRAL_CONTROLS };
 	private readonly disposables: Array<{ dispose: () => void }> = [];
 
 	private chassisMesh: THREE.Object3D | undefined;
@@ -77,6 +88,11 @@ export class Viewport {
 
 	get frames(): number {
 		return this.frameCount;
+	}
+
+	/** Feed normalised control inputs (from keyboard/gamepad). Merged, not replaced. */
+	setControls(partial: Partial<MotorcycleControls>): void {
+		Object.assign(this.controls, partial);
 	}
 
 	/** Build the physics world + motorcycle rig and begin rendering. */
@@ -184,6 +200,7 @@ export class Viewport {
 			const { motorcycle, world, chassisHandle } = this.rig;
 			const alpha = this.simLoop.advance(frame.frameDeltaS, (dtS) => {
 				this.prevTransform = this.currTransform;
+				motorcycle.setControls(this.controls);
 				motorcycle.update(dtS);
 				world.step(dtS);
 				this.currTransform = world.getTransform(chassisHandle);
@@ -193,6 +210,8 @@ export class Viewport {
 			const rc = motorcycle.debug.rearContactWorldM;
 			this.frontContactMarker?.position.set(fc.x, fc.y, fc.z);
 			this.rearContactMarker?.position.set(rc.x, rc.y, rc.z);
+			// Keep the inspection camera loosely trained on the moving bike.
+			this.inspectionCamera.follow(this.chassisMesh.position);
 		}
 
 		this.inspectionCamera.update();
@@ -205,6 +224,7 @@ export class Viewport {
 				physicsHz: 1 / FIXED_DT_S,
 				drawCalls: this.renderer.info.render.calls,
 				triangles: this.renderer.info.render.triangles,
+				speedKmh: (this.rig?.motorcycle.state.forwardSpeedMps ?? 0) * 3.6,
 				frontLoadN: this.rig?.motorcycle.state.frontNormalLoadN ?? 0,
 				rearLoadN: this.rig?.motorcycle.state.rearNormalLoadN ?? 0
 			});

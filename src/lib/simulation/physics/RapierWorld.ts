@@ -1,5 +1,8 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { add, cross, rotateByQuat, sub, type Vec3 } from '../core/math';
+import { GRAVITY_MPS2 } from '../core/constants';
+
+export { GRAVITY_MPS2 };
 
 /**
  * The single point of contact with the Rapier rigid-body engine (AGENTS.md §17,
@@ -13,7 +16,6 @@ import { add, cross, rotateByQuat, sub, type Vec3 } from '../core/math';
  * Loads the WASM engine once via `RAPIER.init()`; works in the browser and in
  * headless Node tests (the `-compat` build inlines the module).
  */
-export const GRAVITY_MPS2 = 9.80665;
 
 export interface Transform {
 	position: { x: number; y: number; z: number };
@@ -126,6 +128,11 @@ export class RapierWorld {
 	linearVelocity(handle: number): Vec3 {
 		const v = this.world.getRigidBody(handle).linvel();
 		return { x: v.x, y: v.y, z: v.z };
+	}
+
+	/** Set a body's linear velocity directly (test setup / respawn only). */
+	setLinearVelocity(handle: number, velocityMps: Vec3): void {
+		this.world.getRigidBody(handle).setLinvel(velocityMps, true);
 	}
 
 	angularVelocity(handle: number): Vec3 {

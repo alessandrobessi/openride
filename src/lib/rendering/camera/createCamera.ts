@@ -11,6 +11,8 @@ export interface InspectionCamera {
 	controls: OrbitControls;
 	/** Call on viewport resize. */
 	setViewportSize: (widthPx: number, heightPx: number) => void;
+	/** Slew the orbit target (and the camera with it) toward a world point. */
+	follow: (worldPoint: THREE.Vector3) => void;
 	/** Call once per rendered frame. */
 	update: () => void;
 	dispose: () => void;
@@ -32,10 +34,18 @@ export function createCamera(canvas: HTMLElement): InspectionCamera {
 		camera.updateProjectionMatrix();
 	};
 
+	const followDelta = new THREE.Vector3();
+	const follow = (worldPoint: THREE.Vector3): void => {
+		followDelta.subVectors(worldPoint, controls.target).multiplyScalar(0.08);
+		controls.target.add(followDelta);
+		camera.position.add(followDelta);
+	};
+
 	return {
 		camera,
 		controls,
 		setViewportSize,
+		follow,
 		update: () => controls.update(),
 		dispose: () => controls.dispose()
 	};
