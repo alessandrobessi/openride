@@ -10,6 +10,8 @@ import {
 	createInstrumentCluster,
 	type InstrumentCluster
 } from './cockpit/instruments/InstrumentCluster';
+import { createEngineAudio, type EngineAudio } from '$lib/audio/engine/EngineAudio';
+import { engineAudioParams } from '$lib/audio/engine/engineAudioParams';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { RapierWorld, type Transform } from '$lib/simulation/physics/RapierWorld';
 import {
@@ -103,6 +105,7 @@ export class Viewport {
 	private debugGroup: THREE.Group | undefined;
 	private cockpit: Cockpit | undefined;
 	private cluster: InstrumentCluster | undefined;
+	private readonly engineAudio: EngineAudio = createEngineAudio();
 	/** First-person cockpit is the default ride view (M20); 'chase' is the debug orbit cam. */
 	private viewMode: 'cockpit' | 'chase' = 'cockpit';
 	private frontContactMarker: THREE.Mesh | undefined;
@@ -160,6 +163,11 @@ export class Viewport {
 	/** Gamepad analog clutch: 1 = engaged, 0 = pulled in. The value eases toward this. */
 	setClutchInput(value01: number): void {
 		this.clutchTarget = Number.isFinite(value01) ? Math.min(1, Math.max(0, value01)) : 1;
+	}
+
+	/** Start the procedural engine audio — must be called from a user gesture. */
+	resumeAudio(): void {
+		void this.engineAudio.resume();
 	}
 
 	shiftUp(): void {
@@ -385,6 +393,7 @@ export class Viewport {
 		this.worldManager?.dispose();
 		this.terrainColliders.clear();
 		this.terrainMeshes.clear();
+		this.engineAudio.dispose();
 		this.fpCamera.dispose();
 		this.inspectionCamera.dispose();
 		this.lighting.dispose();
@@ -538,6 +547,23 @@ export class Viewport {
 					tcEnabled: motorcycle.isAssistEnabled('tractionControl'),
 					tcActive: s.tractionControlActive
 				});
+			}
+
+			// Drive the procedural engine voice from sampled state (M23).
+			{
+				const s = motorcycle.state;
+				const eng = ADVENTURE_1200.powertrain.engine;
+				this.engineAudio.update(
+					engineAudioParams({
+						rpm: s.engineRPM,
+						idleRpm: eng.idleRPM,
+						redlineRpm: eng.redlineRPM,
+						throttle: s.throttle,
+						load01: Math.max(0, s.engineTorqueNm) / eng.peakTorqueNm,
+						engineBraking: s.throttle < 0.06 && s.engineRPM > eng.idleRPM * 1.15 && s.gear !== 0,
+						stalled: s.engineStalled
+					})
+				);
 			}
 		}
 

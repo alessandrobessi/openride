@@ -45,6 +45,11 @@
 				console.error('Viewport.start failed:', err);
 			});
 
+		// The engine voice (M23) can only start from a user gesture (autoplay policy).
+		const enableAudio = () => viewport.resumeAudio();
+		window.addEventListener('keydown', enableAudio, { once: true });
+		window.addEventListener('pointerdown', enableAudio, { once: true });
+
 		// Keyboard (OPENRIDE-BLUEPRINT.md §27) and gamepad (M22) both stay wired.
 		const detachKeyboard = attachKeyboardControls({
 			setAnalog: (c) => viewport.setControls(c),
@@ -87,6 +92,8 @@
 		padRaf = requestAnimationFrame(pollPad);
 
 		return () => {
+			window.removeEventListener('keydown', enableAudio);
+			window.removeEventListener('pointerdown', enableAudio);
 			detachKeyboard();
 			cancelAnimationFrame(padRaf);
 			viewport.dispose();
