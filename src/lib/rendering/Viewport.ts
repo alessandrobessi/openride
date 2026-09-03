@@ -4,6 +4,8 @@ import { applyInterpolatedTransform } from './interpolate';
 import { createScene, type TestScene } from './scene/createScene';
 import { createLighting, type Lighting } from './lighting/createLighting';
 import { createCamera, type InspectionCamera } from './camera/createCamera';
+import { createFirstPersonCamera, type FirstPersonCamera } from './camera/createFirstPersonCamera';
+import { createCockpit, type Cockpit } from './cockpit/createCockpit';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { RapierWorld, type Transform } from '$lib/simulation/physics/RapierWorld';
 import {
@@ -59,6 +61,7 @@ export interface ViewportStats {
 	lonDeg: number;
 	activeChunks: number;
 	chunkId: string;
+	view: 'cockpit' | 'chase';
 }
 
 const FIXED_DT_S = 1 / 120;
@@ -77,6 +80,7 @@ export class Viewport {
 	private readonly testScene: TestScene;
 	private readonly lighting: Lighting;
 	private readonly inspectionCamera: InspectionCamera;
+	private readonly fpCamera: FirstPersonCamera;
 	private readonly loop: RenderLoop;
 	private readonly resizeObserver: ResizeObserver;
 
@@ -91,6 +95,11 @@ export class Viewport {
 	private readonly disposables: Array<{ dispose: () => void }> = [];
 
 	private chassisMesh: THREE.Object3D | undefined;
+	/** The M3 debug primitives (box + axes + wheel discs); hidden in cockpit view. */
+	private debugGroup: THREE.Group | undefined;
+	private cockpit: Cockpit | undefined;
+	/** First-person cockpit is the default ride view (M20); 'chase' is the debug orbit cam. */
+	private viewMode: 'cockpit' | 'chase' = 'cockpit';
 	private frontContactMarker: THREE.Mesh | undefined;
 	private rearContactMarker: THREE.Mesh | undefined;
 	private prevTransform: Transform = identityTransform();
@@ -120,6 +129,7 @@ export class Viewport {
 		this.testScene.scene.add(this.lighting.group);
 
 		this.inspectionCamera = createCamera(canvas);
+		this.fpCamera = createFirstPersonCamera();
 
 		this.loop = new RenderLoop((frame) => this.renderFrame(frame));
 
@@ -157,6 +167,19 @@ export class Viewport {
 	toggleAssist(assist: 'abs' | 'tractionControl' | 'wheelieControl'): void {
 		const m = this.rig?.motorcycle;
 		if (m) m.setAssistEnabled(assist, !m.isAssistEnabled(assist));
+	}
+
+	/** Switch between the first-person cockpit (M20) and the debug chase orbit cam. */
+	toggleView(): void {
+		this.viewMode = this.viewMode === 'cockpit' ? 'chase' : 'cockpit';
+		const cockpitView = this.viewMode === 'cockpit';
+		if (this.debugGroup) this.debugGroup.visible = !cockpitView;
+		if (this.cockpit) this.cockpit.group.visible = cockpitView;
+		if (this.frontContactMarker) this.frontContactMarker.visible = !cockpitView;
+		if (this.rearContactMarker) this.rearContactMarker.visible = !cockpitView;
+		if (cockpitView && this.chassisMesh) {
+			this.fpCamera.reset(this.chassisMesh.position, this.chassisMesh.quaternion);
+		}
 	}
 
 	private geoFromChassis(): { latDeg: number; lonDeg: number } {
@@ -221,6 +244,12 @@ export class Viewport {
 		this.buildDebugMotorcycle();
 		this.prevTransform = rig.world.getTransform(rig.chassisHandle);
 		this.currTransform = this.prevTransform;
+
+		// Seat the cockpit camera on the spawn pose so the first frame is right.
+		if (this.chassisMesh) {
+			applyInterpolatedTransform(this.chassisMesh, this.prevTransform, this.currTransform, 1);
+			this.fpCamera.reset(this.chassisMesh.position, this.chassisMesh.quaternion);
+		}
 
 		this.loop.start();
 	}
@@ -346,6 +375,7 @@ export class Viewport {
 		this.worldManager?.dispose();
 		this.terrainColliders.clear();
 		this.terrainMeshes.clear();
+		this.fpCamera.dispose();
 		this.inspectionCamera.dispose();
 		this.lighting.dispose();
 		this.testScene.dispose();
@@ -357,7 +387,12 @@ export class Viewport {
 	private buildDebugMotorcycle(): void {
 		const geo = ADVENTURE_1200.physical.geometry;
 		const group = new THREE.Group();
-		group.name = 'motorcycle-debug';
+		group.name = 'motorcycle';
+
+		// M3 debug primitives — a translucent chassis box, a CG triad and wheel
+		// discs. Kept for the chase view; hidden from the cockpit.
+		const debug = new THREE.Group();
+		debug.name = 'motorcycle-debug';
 
 		const bodyGeom = new THREE.BoxGeometry(0.7, 1.0, 2.1);
 		const bodyMat = new THREE.MeshStandardMaterial({
@@ -366,21 +401,21 @@ export class Viewport {
 			opacity: 0.35,
 			roughness: 0.5
 		});
-		group.add(new THREE.Mesh(bodyGeom, bodyMat));
+		debug.add(new THREE.Mesh(bodyGeom, bodyMat));
 		this.track(bodyGeom, bodyMat);
 
 		const cg = new THREE.AxesHelper(0.5);
-		group.add(cg);
+		debug.add(cg);
 		this.track(cg.geometry, cg.material as THREE.Material);
 
-		group.add(
+		debug.add(
 			this.wheelDisc(
 				geo.frontWheelRadiusM,
 				geo.wheelbaseM - geo.cgFromRearAxleM,
 				geo.frontWheelRadiusM - geo.cgHeightM
 			)
 		);
-		group.add(
+		debug.add(
 			this.wheelDisc(
 				geo.rearWheelRadiusM,
 				-geo.cgFromRearAxleM,
@@ -388,6 +423,16 @@ export class Viewport {
 				true
 			)
 		);
+		group.add(debug);
+		this.debugGroup = debug;
+
+		this.cockpit = createCockpit();
+		group.add(this.cockpit.group);
+		this.track(this.cockpit);
+
+		// Cockpit is the default view: show the cockpit, hide the debug rig.
+		debug.visible = false;
+		this.cockpit.group.visible = true;
 
 		this.testScene.scene.add(group);
 		this.chassisMesh = group;
@@ -396,6 +441,8 @@ export class Viewport {
 		const markerMat = new THREE.MeshBasicMaterial({ color: 0xff5a4a });
 		this.frontContactMarker = new THREE.Mesh(markerGeom, markerMat);
 		this.rearContactMarker = new THREE.Mesh(markerGeom, markerMat);
+		this.frontContactMarker.visible = false;
+		this.rearContactMarker.visible = false;
 		this.testScene.scene.add(this.frontContactMarker, this.rearContactMarker);
 		this.track(markerGeom, markerMat);
 	}
@@ -419,6 +466,7 @@ export class Viewport {
 		const height = this.canvas.clientHeight || window.innerHeight;
 		this.renderer.setSize(width, height, false);
 		this.inspectionCamera.setViewportSize(width, height);
+		this.fpCamera.setViewportSize(width, height);
 	}
 
 	private renderFrame(frame: RenderLoopFrame): void {
@@ -438,8 +486,17 @@ export class Viewport {
 			const rc = motorcycle.debug.rearContactWorldM;
 			this.frontContactMarker?.position.set(fc.x, fc.y, fc.z);
 			this.rearContactMarker?.position.set(rc.x, rc.y, rc.z);
-			// Keep the inspection camera loosely trained on the moving bike.
-			this.inspectionCamera.follow(this.chassisMesh.position);
+
+			if (this.viewMode === 'cockpit') {
+				this.fpCamera.update(
+					this.chassisMesh.position,
+					this.chassisMesh.quaternion,
+					frame.frameDeltaS
+				);
+			} else {
+				// Keep the inspection camera loosely trained on the moving bike.
+				this.inspectionCamera.follow(this.chassisMesh.position);
+			}
 
 			// Stream terrain chunks around the rider (M19) — a few times a second.
 			if (this.worldManager && this.frameCount % 12 === 0) {
@@ -450,8 +507,12 @@ export class Viewport {
 			}
 		}
 
-		this.inspectionCamera.update();
-		this.renderer.render(this.testScene.scene, this.inspectionCamera.camera);
+		const camera =
+			this.viewMode === 'cockpit' && this.chassisMesh
+				? this.fpCamera.camera
+				: this.inspectionCamera.camera;
+		if (camera === this.inspectionCamera.camera) this.inspectionCamera.update();
+		this.renderer.render(this.testScene.scene, camera);
 		this.frameCount += 1;
 
 		if (this.onStats && this.frameCount % 15 === 0) {
@@ -476,7 +537,8 @@ export class Viewport {
 				tcOn: this.rig?.motorcycle.isAssistEnabled('tractionControl') ?? true,
 				...this.geoFromChassis(),
 				activeChunks: this.streamStats.activeChunks,
-				chunkId: this.streamStats.chunkId
+				chunkId: this.streamStats.chunkId,
+				view: this.viewMode
 			});
 		}
 	}

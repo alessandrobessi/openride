@@ -25,7 +25,8 @@
 		latDeg: 0,
 		lonDeg: 0,
 		activeChunks: 0,
-		chunkId: '—'
+		chunkId: '—',
+		view: 'cockpit'
 	});
 	let frames = $state(0);
 	let startError = $state<string | null>(null);
@@ -65,6 +66,7 @@
 				else if (k === '1') viewport.toggleAssist('abs');
 				else if (k === '2') viewport.toggleAssist('tractionControl');
 				else if (k === '3') viewport.toggleAssist('wheelieControl');
+				else if (k === 'v') viewport.toggleView();
 			}
 			held.add(k);
 			applyAnalog();
@@ -107,13 +109,14 @@
 		<span class:muted={!stats.tcOn} class:live={stats.tcActive}>TC</span>
 		<span>{stats.latDeg.toFixed(5)}, {stats.lonDeg.toFixed(5)}</span>
 		<span>chunks {stats.activeChunks} @ {stats.chunkId}</span>
+		<span>view {stats.view}</span>
 	</div>
 	{#if startError}
 		<pre class="error" data-testid="start-error">{startError}</pre>
 	{/if}
 	<div class="help">
 		W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart · 1/2/3
-		ABS/TC/wheelie
+		ABS/TC/wheelie · V view
 	</div>
 </div>
 
