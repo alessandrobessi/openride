@@ -44,12 +44,12 @@ describe('mapGamepad', () => {
 			0,
 			10
 		);
-		// Stick pushed right (+axis) → steer right → positive steeringInput
-		// (matches the sim: +input rolls the chassis toward its right).
+		// `steeringInput` positive is LEFT (matches the keyboard map), so pushing
+		// the stick right reads negative — the bike then steers right.
 		const pushRight = mapGamepad(reading({ axes: [0.9, 0, 0, 0] }), cfg).controls.steeringInput;
-		expect(pushRight).toBeGreaterThan(0);
+		expect(pushRight).toBeLessThan(0);
 		const pushLeft = mapGamepad(reading({ axes: [-0.9, 0, 0, 0] }), cfg).controls.steeringInput;
-		expect(pushLeft).toBeLessThan(0);
+		expect(pushLeft).toBeGreaterThan(0);
 		const inverted = mapGamepad(reading({ axes: [0.9, 0, 0, 0] }), { ...cfg, invertSteer: true })
 			.controls.steeringInput;
 		expect(inverted).toBeCloseTo(-pushRight, 6);

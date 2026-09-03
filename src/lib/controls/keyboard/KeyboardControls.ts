@@ -67,10 +67,10 @@ export function edgeActionForKey(key: string): EdgeAction | null {
 /**
  * Normalised analog controls from the set of currently-held keys (lower-case).
  *
- * `steeringInput` sign is verified against the simulation itself (headless: a
- * positive input makes the chassis roll positive and veer toward body +x, i.e.
- * the rider's right). So the right keys produce +1 and the left keys −1 —
- * press left, steer left.
+ * `steeringInput` sign is pinned by `tests/scenario/steering-direction`, which
+ * drives this map through the sim + the first-person camera and checks that
+ * pressing left makes a landmark dead ahead swing to the rider's right (you
+ * turned left). That works out to: **left keys → +1, right keys → −1.**
  */
 export function analogFromHeldKeys(held: ReadonlySet<string>): KeyboardAnalog {
 	const has = (...keys: string[]) => keys.some((k) => held.has(k));
@@ -81,7 +81,7 @@ export function analogFromHeldKeys(held: ReadonlySet<string>): KeyboardAnalog {
 		throttle: has('w', 'arrowup') ? 1 : 0,
 		frontBrake: brake,
 		rearBrake: brake,
-		steeringInput: (right ? 1 : 0) - (left ? 1 : 0)
+		steeringInput: (left ? 1 : 0) - (right ? 1 : 0)
 	};
 }
 
