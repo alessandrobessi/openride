@@ -9,6 +9,8 @@
 		drawCalls: 0,
 		triangles: 0,
 		speedKmh: 0,
+		rpm: 0,
+		gear: 0,
 		frontLoadN: 0,
 		rearLoadN: 0
 	});
@@ -62,6 +64,8 @@
 		<span>{stats.drawCalls} draws</span>
 		<span>{stats.triangles.toLocaleString()} tris</span>
 		<span>{stats.speedKmh.toFixed(0)} km/h</span>
+		<span>{stats.rpm.toFixed(0)} rpm</span>
+		<span>gear {stats.gear === 0 ? 'N' : stats.gear}</span>
 		<span>Fz {(stats.frontLoadN / 1000).toFixed(2)}/{(stats.rearLoadN / 1000).toFixed(2)} kN</span>
 	</div>
 	<div class="help">W / ↑ throttle · S / ↓ brake</div>

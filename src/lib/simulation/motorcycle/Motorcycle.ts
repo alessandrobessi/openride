@@ -1,5 +1,6 @@
 import { clamp, dot, normalize, scale, toYawPitchRoll, vec3, type Vec3 } from '../core/math';
 import { clampCompressionM, suspensionForceN } from '../suspension/suspension';
+import { Engine } from '../engine/Engine';
 import { dragForceN } from '../aero/drag';
 import { rollingResistanceForceN } from '../tires/rollingResistance';
 import { brakeForcesN } from '../brakes/brakes';
@@ -94,6 +95,7 @@ export class Motorcycle {
 	private readonly aero: AeroConfig;
 	private readonly geometry: GeometryConfig;
 	private readonly brakeConfig: BrakeConfig;
+	private readonly engine: Engine;
 
 	private environment: MotorcycleEnvironment = {
 		gradeFraction: 0,
@@ -124,6 +126,11 @@ export class Motorcycle {
 		this.massKg = config.physical.mass.totalKg;
 		this.aero = config.physical.aero;
 		this.brakeConfig = config.chassis.brakes;
+		this.engine = new Engine(
+			config.powertrain.engine,
+			config.powertrain.torqueCurve,
+			config.physical.inertia.engineKgM2
+		);
 
 		this.zeroCompressionReachM = geo.cgHeightM;
 		this.front = {
@@ -153,6 +160,14 @@ export class Motorcycle {
 	update(dtS: number): void {
 		this.rig.clearAccumulators();
 		this.syncPose();
+
+		// Engine as an isolated rotational system. Load torque is 0 until the
+		// clutch couples the crank to the rear wheel in M6.
+		this.engine.update(dtS, this.state.throttle, 0);
+		this.state.engineOmegaRadS = this.engine.omegaRadS;
+		this.state.engineRPM = this.engine.rpm;
+		this.state.engineTorqueNm =
+			this.engine.lastCombustionTorqueNm - this.engine.lastFrictionTorqueNm;
 
 		this.frontCompressionM = this.updateWheel('front', this.front, dtS);
 		this.rearCompressionM = this.updateWheel('rear', this.rear, dtS);
@@ -184,7 +199,9 @@ export class Motorcycle {
 		const travelSign = speedAlong >= 0 ? 1 : -1;
 		const normalLoadN = this.state.frontNormalLoadN + this.state.rearNormalLoadN;
 
-		const driveN = stubDriveForceN(this.state.throttle);
+		// Stub uses the lagged throttle so intake response is at least visible in
+		// acceleration; the real engine→wheel path replaces this in M6.
+		const driveN = stubDriveForceN(this.engine.throttleActual);
 		const dragN = moving ? dragForceN(Math.abs(speedAlong), this.aero) : 0;
 		const rollingN = moving
 			? rollingResistanceForceN(normalLoadN, this.environment.surface.rollingResistance)

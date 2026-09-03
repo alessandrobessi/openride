@@ -37,6 +37,8 @@ export interface MotorcycleState {
 	// --- driveline (M5+/M6+) ---
 	engineOmegaRadS: number;
 	engineRPM: number;
+	/** Net crankshaft torque (combustion − friction/engine-braking), N·m. */
+	engineTorqueNm: number;
 	gear: number; // 0 = neutral
 	frontWheelOmegaRadS: number;
 	rearWheelOmegaRadS: number;
@@ -77,6 +79,7 @@ export function createMotorcycleState(): MotorcycleState {
 
 		engineOmegaRadS: 0,
 		engineRPM: 0,
+		engineTorqueNm: 0,
 		gear: 0,
 		frontWheelOmegaRadS: 0,
 		rearWheelOmegaRadS: 0,

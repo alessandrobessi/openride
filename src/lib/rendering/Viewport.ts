@@ -28,6 +28,8 @@ export interface ViewportStats {
 	drawCalls: number;
 	triangles: number;
 	speedKmh: number;
+	rpm: number;
+	gear: number;
 	frontLoadN: number;
 	rearLoadN: number;
 }
@@ -225,6 +227,8 @@ export class Viewport {
 				drawCalls: this.renderer.info.render.calls,
 				triangles: this.renderer.info.render.triangles,
 				speedKmh: (this.rig?.motorcycle.state.forwardSpeedMps ?? 0) * 3.6,
+				rpm: this.rig?.motorcycle.state.engineRPM ?? 0,
+				gear: this.rig?.motorcycle.state.gear ?? 0,
 				frontLoadN: this.rig?.motorcycle.state.frontNormalLoadN ?? 0,
 				rearLoadN: this.rig?.motorcycle.state.rearNormalLoadN ?? 0
 			});
