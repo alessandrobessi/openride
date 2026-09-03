@@ -1,0 +1,29 @@
+{
+	"version": 1,
+	"id": "stelvio",
+	"name": "Passo dello Stelvio (SS38)",
+	"origin": {
+		"latDeg": 46.5476,
+		"lonDeg": 10.5055,
+		"altM": 1604
+	},
+	"spawn": {
+		"x": -0.039,
+		"y": 1.14,
+		"z": -12.08,
+		"headingRad": 3.13434
+	},
+	"assets": {
+		"roads": "roads",
+		"terrain": "terrain"
+	},
+	"metadata": {
+		"region": "Alps — Stelvio Pass (SS38), Italy",
+		"roadLengthM": 8369,
+		"hairpinCount": 28,
+		"elevationMinM": 1604,
+		"elevationMaxM": 2333,
+		"elevationClimbM": 762,
+		"builtAt": "2026-09-03T10:13:02.782Z"
+	}
+}

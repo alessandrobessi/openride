@@ -13,9 +13,13 @@ import {
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
 import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 import { LocalFrame, STELVIO_ORIGIN } from '$lib/world/geo/enu';
+import { fetchWorldManifest, type WorldManifest } from '$lib/world/WorldManifest';
 import { fetchRoadMesh, type LoadedRoadMesh } from '$lib/world/roads/loadRoadMesh';
 import { fetchTerrain, type LoadedTerrain } from '$lib/world/terrain/loadTerrain';
 import { asset } from '$lib/paths';
+
+/** The world package the ride stage boots. */
+const WORLD_DIR = 'worlds/stelvio';
 
 /**
  * Owns the WebGL renderer, the test scene, the inspection camera, the fixed-step
@@ -69,8 +73,9 @@ export class Viewport {
 	private readonly resizeObserver: ResizeObserver;
 
 	private readonly simLoop = new SimulationLoop({ fixedDtS: FIXED_DT_S });
-	/** Debug: report the chassis position back as geographic coordinates (M13). */
-	private readonly geoFrame = new LocalFrame(STELVIO_ORIGIN);
+	/** Debug: report the chassis position back as geographic coordinates (M13).
+	 *  Re-anchored on the manifest origin once the world loads (M18). */
+	private geoFrame = new LocalFrame(STELVIO_ORIGIN);
 	private rig: MotorcycleRig | undefined;
 	private readonly controls: MotorcycleControls = { ...NEUTRAL_CONTROLS };
 	/** Keyboard sets a target; the clutch eases toward it so takeup is smooth. */
@@ -149,28 +154,30 @@ export class Viewport {
 	async start(onStats?: (stats: ViewportStats) => void): Promise<void> {
 		this.onStats = onStats;
 
-		// Try to build the world on the real Stelvio road; fall back to the flat
-		// test plane if the world package can't be loaded.
+		// Boot the world purely from its manifest (M18); fall back to the flat
+		// test plane if the package can't be loaded.
+		const worldDir = asset(WORLD_DIR);
+		let manifest: WorldManifest | undefined;
 		let road: LoadedRoadMesh | undefined;
-		try {
-			road = await fetchRoadMesh(asset('worlds/stelvio/roads'));
-		} catch (err) {
-			console.warn('Stelvio road package unavailable — using the flat test plane:', err);
-		}
-		if (this.disposed) return;
-
 		let terrain: LoadedTerrain | undefined;
-		if (road) {
+		try {
+			manifest = await fetchWorldManifest(worldDir);
+			road = await fetchRoadMesh(`${worldDir}/${manifest.assets.roads}`);
 			try {
-				terrain = await fetchTerrain(asset('worlds/stelvio/terrain'));
+				terrain = await fetchTerrain(`${worldDir}/${manifest.assets.terrain}`);
 			} catch (err) {
-				console.warn('Stelvio terrain package unavailable — road only:', err);
+				console.warn('World terrain package unavailable — road only:', err);
 			}
+		} catch (err) {
+			console.warn('World package unavailable — using the flat test plane:', err);
+			manifest = undefined;
+			road = undefined;
 		}
 		if (this.disposed) return;
 
 		let rig: MotorcycleRig;
-		if (road) {
+		if (manifest && road) {
+			this.geoFrame = new LocalFrame(manifest.origin);
 			const world = await RapierWorld.create();
 			world.addStaticGround(2000, 1, -40); // safety floor far below the road
 			world.addTrimeshCollider(road.collision.positions, road.collision.indices);
@@ -178,7 +185,7 @@ export class Viewport {
 			rig = await createMotorcycleRig(ADVENTURE_1200, {
 				world,
 				withGround: false,
-				spawn: road.index.spawn
+				spawn: manifest.spawn
 			});
 			this.addRoadSurface(road);
 		} else {
