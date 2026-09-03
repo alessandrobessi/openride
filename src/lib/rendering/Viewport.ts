@@ -15,7 +15,13 @@ import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 import { LocalFrame, STELVIO_ORIGIN } from '$lib/world/geo/enu';
 import { fetchWorldManifest, type WorldManifest } from '$lib/world/WorldManifest';
 import { fetchRoadMesh, type LoadedRoadMesh } from '$lib/world/roads/loadRoadMesh';
-import { fetchTerrain, type LoadedTerrain } from '$lib/world/terrain/loadTerrain';
+import { fetchTerrainIndex } from '$lib/world/terrain/loadTerrain';
+import type {
+	TerrainChunkHeights,
+	TerrainChunkMeta,
+	TerrainIndex
+} from '$lib/world/terrain/TerrainChunk';
+import { WorldManager, type ChunkSink } from '$lib/world/streaming/WorldManager';
 import { asset } from '$lib/paths';
 
 /** The world package the ride stage boots. */
@@ -51,6 +57,8 @@ export interface ViewportStats {
 	tcOn: boolean;
 	latDeg: number;
 	lonDeg: number;
+	activeChunks: number;
+	chunkId: string;
 }
 
 const FIXED_DT_S = 1 / 120;
@@ -87,6 +95,14 @@ export class Viewport {
 	private rearContactMarker: THREE.Mesh | undefined;
 	private prevTransform: Transform = identityTransform();
 	private currTransform: Transform = identityTransform();
+
+	/** Terrain chunk streaming (M19). */
+	private worldManager: WorldManager | undefined;
+	private terrainGroup: THREE.Group | undefined;
+	private terrainMat: THREE.MeshStandardMaterial | undefined;
+	private readonly terrainColliders = new Map<string, number>();
+	private readonly terrainMeshes = new Map<string, THREE.Mesh>();
+	private streamStats = { activeChunks: 0, chunkId: '—' };
 
 	private frameCount = 0;
 	private disposed = false;
@@ -159,12 +175,14 @@ export class Viewport {
 		const worldDir = asset(WORLD_DIR);
 		let manifest: WorldManifest | undefined;
 		let road: LoadedRoadMesh | undefined;
-		let terrain: LoadedTerrain | undefined;
+		let terrainIndex: TerrainIndex | undefined;
+		let terrainDir = '';
 		try {
 			manifest = await fetchWorldManifest(worldDir);
 			road = await fetchRoadMesh(`${worldDir}/${manifest.assets.roads}`);
+			terrainDir = `${worldDir}/${manifest.assets.terrain}`;
 			try {
-				terrain = await fetchTerrain(`${worldDir}/${manifest.assets.terrain}`);
+				terrainIndex = await fetchTerrainIndex(terrainDir);
 			} catch (err) {
 				console.warn('World terrain package unavailable — road only:', err);
 			}
@@ -181,7 +199,10 @@ export class Viewport {
 			const world = await RapierWorld.create();
 			world.addStaticGround(2000, 1, -40); // safety floor far below the road
 			world.addTrimeshCollider(road.collision.positions, road.collision.indices);
-			if (terrain) this.addTerrain(terrain, world);
+			if (terrainIndex) {
+				this.startTerrainStreaming(terrainIndex, terrainDir, world);
+				this.worldManager?.update(manifest.spawn.x, manifest.spawn.z);
+			}
 			rig = await createMotorcycleRig(ADVENTURE_1200, {
 				world,
 				withGround: false,
@@ -220,69 +241,98 @@ export class Viewport {
 	}
 
 	/**
-	 * Add DEM terrain (M17): one Rapier heightfield collider and one displaced
-	 * grid mesh per chunk, both from the same height grid so they never diverge.
+	 * Wire up DEM terrain streaming (M17 geometry, M19 streaming). The
+	 * {@link WorldManager} decides which chunks are near the rider; this sink
+	 * turns each activate/deactivate into a Rapier heightfield collider and a
+	 * displaced grid mesh built from the same height grid so they never diverge.
 	 */
-	private addTerrain(terrain: LoadedTerrain, world: RapierWorld): void {
-		const group = new THREE.Group();
-		group.name = 'terrain';
-		const mat = new THREE.MeshStandardMaterial({
+	private startTerrainStreaming(index: TerrainIndex, terrainDir: string, world: RapierWorld): void {
+		this.terrainGroup = new THREE.Group();
+		this.terrainGroup.name = 'terrain';
+		this.terrainMat = new THREE.MeshStandardMaterial({
 			color: 0x6b7355,
 			roughness: 1,
 			flatShading: true
 		});
-		this.track(mat);
+		this.track(this.terrainMat);
+		this.testScene.scene.add(this.terrainGroup);
 
-		for (const meta of terrain.index.chunks) {
-			const chunk = terrain.chunks.get(meta.id);
-			if (!chunk) continue;
-			const g = chunk.gridSize;
-			const step = meta.sizeM / (g - 1);
+		const sink: ChunkSink = {
+			activate: (meta, heights) => {
+				const handle = world.addHeightfieldChunk(
+					heights.gridSize,
+					heights.heights,
+					meta.sizeM,
+					meta.originX + meta.sizeM / 2,
+					meta.originZ + meta.sizeM / 2
+				);
+				this.terrainColliders.set(meta.id, handle);
 
-			world.addHeightfieldChunk(
-				g,
-				chunk.heights,
-				meta.sizeM,
-				meta.originX + meta.sizeM / 2,
-				meta.originZ + meta.sizeM / 2
-			);
+				const geom = this.buildChunkGeometry(meta, heights);
+				const mesh = new THREE.Mesh(geom, this.terrainMat);
+				mesh.name = `terrain-${meta.id}`;
+				this.terrainGroup?.add(mesh);
+				this.terrainMeshes.set(meta.id, mesh);
+			},
+			deactivate: (meta) => {
+				const handle = this.terrainColliders.get(meta.id);
+				if (handle !== undefined) world.removeCollider(handle);
+				this.terrainColliders.delete(meta.id);
 
-			const positions = new Float32Array(g * g * 3);
-			for (let r = 0; r < g; r++) {
-				for (let c = 0; c < g; c++) {
-					const i = (r * g + c) * 3;
-					positions[i] = meta.originX + c * step;
-					positions[i + 1] = chunk.heights[r * g + c];
-					positions[i + 2] = meta.originZ + r * step;
+				const mesh = this.terrainMeshes.get(meta.id);
+				if (mesh) {
+					this.terrainGroup?.remove(mesh);
+					mesh.geometry.dispose();
 				}
+				this.terrainMeshes.delete(meta.id);
 			}
-			const indices = new Uint32Array((g - 1) * (g - 1) * 6);
-			let k = 0;
-			for (let r = 0; r < g - 1; r++) {
-				for (let c = 0; c < g - 1; c++) {
-					const a = r * g + c;
-					const b = a + 1;
-					const d = a + g;
-					const e = d + 1;
-					indices[k++] = a;
-					indices[k++] = d;
-					indices[k++] = b;
-					indices[k++] = b;
-					indices[k++] = d;
-					indices[k++] = e;
-				}
+		};
+
+		this.worldManager = new WorldManager(index, sink, {
+			fetchChunk: async (file) => {
+				const res = await fetch(`${terrainDir}/${file}`);
+				if (!res.ok) throw new Error(`terrain chunk ${file}: HTTP ${res.status}`);
+				return res.arrayBuffer();
 			}
-			const geom = new THREE.BufferGeometry();
-			geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-			geom.setIndex(new THREE.BufferAttribute(indices, 1));
-			geom.computeVertexNormals();
-			const chunkMesh = new THREE.Mesh(geom, mat);
-			chunkMesh.name = `terrain-${meta.id}`;
-			group.add(chunkMesh);
-			this.track(geom);
+		});
+	}
+
+	private buildChunkGeometry(
+		meta: TerrainChunkMeta,
+		heights: TerrainChunkHeights
+	): THREE.BufferGeometry {
+		const g = heights.gridSize;
+		const step = meta.sizeM / (g - 1);
+		const positions = new Float32Array(g * g * 3);
+		for (let r = 0; r < g; r++) {
+			for (let c = 0; c < g; c++) {
+				const i = (r * g + c) * 3;
+				positions[i] = meta.originX + c * step;
+				positions[i + 1] = heights.heights[r * g + c];
+				positions[i + 2] = meta.originZ + r * step;
+			}
 		}
-
-		this.testScene.scene.add(group);
+		const indices = new Uint32Array((g - 1) * (g - 1) * 6);
+		let k = 0;
+		for (let r = 0; r < g - 1; r++) {
+			for (let c = 0; c < g - 1; c++) {
+				const a = r * g + c;
+				const b = a + 1;
+				const d = a + g;
+				const e = d + 1;
+				indices[k++] = a;
+				indices[k++] = d;
+				indices[k++] = b;
+				indices[k++] = b;
+				indices[k++] = d;
+				indices[k++] = e;
+			}
+		}
+		const geom = new THREE.BufferGeometry();
+		geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+		geom.setIndex(new THREE.BufferAttribute(indices, 1));
+		geom.computeVertexNormals();
+		return geom;
 	}
 
 	stop(): void {
@@ -293,6 +343,9 @@ export class Viewport {
 		this.disposed = true;
 		this.loop.stop();
 		this.resizeObserver.disconnect();
+		this.worldManager?.dispose();
+		this.terrainColliders.clear();
+		this.terrainMeshes.clear();
 		this.inspectionCamera.dispose();
 		this.lighting.dispose();
 		this.testScene.dispose();
@@ -387,6 +440,14 @@ export class Viewport {
 			this.rearContactMarker?.position.set(rc.x, rc.y, rc.z);
 			// Keep the inspection camera loosely trained on the moving bike.
 			this.inspectionCamera.follow(this.chassisMesh.position);
+
+			// Stream terrain chunks around the rider (M19) — a few times a second.
+			if (this.worldManager && this.frameCount % 12 === 0) {
+				const p = motorcycle.state.positionWorldM;
+				this.worldManager.update(p.x, p.z);
+				const s = this.worldManager.statsAt(p.x, p.z);
+				this.streamStats = { activeChunks: s.activeChunks, chunkId: s.currentChunkId ?? '—' };
+			}
 		}
 
 		this.inspectionCamera.update();
@@ -413,7 +474,9 @@ export class Viewport {
 				tcActive: this.rig?.motorcycle.state.tractionControlActive ?? false,
 				absOn: this.rig?.motorcycle.isAssistEnabled('abs') ?? true,
 				tcOn: this.rig?.motorcycle.isAssistEnabled('tractionControl') ?? true,
-				...this.geoFromChassis()
+				...this.geoFromChassis(),
+				activeChunks: this.streamStats.activeChunks,
+				chunkId: this.streamStats.chunkId
 			});
 		}
 	}

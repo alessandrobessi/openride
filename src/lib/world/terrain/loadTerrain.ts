@@ -1,25 +1,13 @@
-import { parseTerrainChunk, type TerrainChunkHeights, type TerrainIndex } from './TerrainChunk';
-
-export interface LoadedTerrain {
-	index: TerrainIndex;
-	chunks: Map<string, TerrainChunkHeights>;
-}
+import type { TerrainIndex } from './TerrainChunk';
 
 /**
- * Fetch the whole terrain package (index + every chunk binary). The Stelvio
- * prototype region is small enough to preload; streaming is M19.
+ * Fetch the terrain index. Chunk binaries are streamed on demand by the
+ * {@link import('../streaming/WorldManager').WorldManager} (milestone M19), so
+ * there is no eager "load everything" path here.
  */
-export async function fetchTerrain(baseUrl: string): Promise<LoadedTerrain> {
+export async function fetchTerrainIndex(baseUrl: string): Promise<TerrainIndex> {
 	const dir = baseUrl.replace(/\/$/, '');
-	const indexRes = await fetch(`${dir}/index.json`);
-	if (!indexRes.ok) throw new Error(`terrain index: HTTP ${indexRes.status}`);
-	const index = (await indexRes.json()) as TerrainIndex;
-
-	const entries = await Promise.all(
-		index.chunks.map(async (meta) => {
-			const buf = await fetch(`${dir}/${meta.file}`).then((r) => r.arrayBuffer());
-			return [meta.id, parseTerrainChunk(buf)] as const;
-		})
-	);
-	return { index, chunks: new Map(entries) };
+	const res = await fetch(`${dir}/index.json`);
+	if (!res.ok) throw new Error(`terrain index: HTTP ${res.status}`);
+	return (await res.json()) as TerrainIndex;
 }

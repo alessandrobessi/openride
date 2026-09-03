@@ -23,16 +23,24 @@
 		absOn: true,
 		tcOn: true,
 		latDeg: 0,
-		lonDeg: 0
+		lonDeg: 0,
+		activeChunks: 0,
+		chunkId: '—'
 	});
 	let frames = $state(0);
+	let startError = $state<string | null>(null);
 
 	onMount(() => {
 		const viewport = new Viewport(canvas);
-		void viewport.start((s) => {
-			stats = s;
-			frames = viewport.frames;
-		});
+		viewport
+			.start((s) => {
+				stats = s;
+				frames = viewport.frames;
+			})
+			.catch((err: unknown) => {
+				startError = err instanceof Error ? (err.stack ?? err.message) : String(err);
+				console.error('Viewport.start failed:', err);
+			});
 
 		// Development keyboard mapping (OPENRIDE-BLUEPRINT.md §27). Full gamepad +
 		// configurable input is M22.
@@ -98,7 +106,11 @@
 		<span class:muted={!stats.absOn} class:live={stats.absActive}>ABS</span>
 		<span class:muted={!stats.tcOn} class:live={stats.tcActive}>TC</span>
 		<span>{stats.latDeg.toFixed(5)}, {stats.lonDeg.toFixed(5)}</span>
+		<span>chunks {stats.activeChunks} @ {stats.chunkId}</span>
 	</div>
+	{#if startError}
+		<pre class="error" data-testid="start-error">{startError}</pre>
+	{/if}
 	<div class="help">
 		W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart · 1/2/3
 		ABS/TC/wheelie
@@ -153,6 +165,24 @@
 	.live {
 		color: #ffb454;
 		font-weight: 700;
+	}
+
+	.error {
+		position: absolute;
+		top: 3rem;
+		left: 0.75rem;
+		max-width: 60ch;
+		margin: 0;
+		padding: 0.5rem 0.7rem;
+		border-radius: 0.35rem;
+		background: rgba(120, 20, 20, 0.85);
+		color: #ffd7d7;
+		font:
+			11px/1.4 ui-monospace,
+			SFMono-Regular,
+			Menlo,
+			monospace;
+		white-space: pre-wrap;
 	}
 
 	.help {

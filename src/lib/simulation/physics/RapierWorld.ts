@@ -245,7 +245,7 @@ export class RapierWorld {
 		chunkSizeM: number,
 		centerX: number,
 		centerZ: number
-	): void {
+	): number {
 		const n = gridSize - 1; // rapier: (nrows+1)*(ncols+1) samples
 		// Rapier indexes column-major (i along x, j along z); our grid is
 		// row-major with row = z, col = x — transpose.
@@ -258,7 +258,13 @@ export class RapierWorld {
 			y: 1,
 			z: chunkSizeM
 		}).setTranslation(centerX, 0, centerZ);
-		this.world.createCollider(desc);
+		return this.world.createCollider(desc).handle;
+	}
+
+	/** Remove a collider previously returned by {@link addHeightfieldChunk}. */
+	removeCollider(handle: number): void {
+		const collider = this.world.getCollider(handle);
+		if (collider) this.world.removeCollider(collider, false);
 	}
 
 	/** Advance the physics world by one fixed step of `dtS` seconds. */
