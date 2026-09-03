@@ -1,0 +1,12 @@
+build/
+.svelte-kit/
+package/
+test-results/
+playwright-report/
+pnpm-lock.yaml
+
+# Verbatim specification documents — keep original formatting.
+OPENRIDE-BLUEPRINT.md
+MOTORCYCLE-PHYSICS.md
+AGENTS.md
+ADVENTURE-1200.md

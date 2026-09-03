@@ -1,0 +1,19 @@
+node_modules/
+/build/
+/.svelte-kit/
+/package/
+.env
+.env.*
+!.env.example
+
+# test / tooling output
+/test-results/
+/playwright-report/
+/playwright/.cache/
+vite.config.ts.timestamp-*
+vite.config.js.timestamp-*
+
+# dev-only geographic inputs for the offline world builder (not shipped)
+/tools/data/
+
+.DS_Store
