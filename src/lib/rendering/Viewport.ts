@@ -13,6 +13,8 @@ import {
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
 import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 import { LocalFrame, STELVIO_ORIGIN } from '$lib/world/geo/enu';
+import { loadRoadPackage } from '$lib/world/roads/RoadPackage';
+import { asset } from '$lib/paths';
 
 /**
  * Owns the WebGL renderer, the test scene, the inspection camera, the fixed-step
@@ -157,6 +159,24 @@ export class Viewport {
 		this.currTransform = this.prevTransform;
 
 		this.loop.start();
+		void this.loadDebugRoad();
+	}
+
+	/** Draw the extracted Stelvio centreline as a debug polyline (M14). */
+	private async loadDebugRoad(): Promise<void> {
+		try {
+			const road = await loadRoadPackage(asset('worlds/stelvio/roads/ss38.json'));
+			if (this.disposed) return;
+			const pts = road.centerline.map((p) => new THREE.Vector3(p.x, p.y ?? 0.2, p.z));
+			const geom = new THREE.BufferGeometry().setFromPoints(pts);
+			const mat = new THREE.LineBasicMaterial({ color: 0xffb454 });
+			const line = new THREE.Line(geom, mat);
+			line.name = 'debug-road';
+			this.testScene.scene.add(line);
+			this.track(geom, mat);
+		} catch (err) {
+			console.warn('debug road overlay unavailable:', err);
+		}
 	}
 
 	stop(): void {
