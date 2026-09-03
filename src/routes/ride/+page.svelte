@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Viewport, type ViewportStats } from '$lib/rendering/Viewport';
+	import { attachKeyboardControls } from '$lib/controls/keyboard/KeyboardControls';
+	import { GamepadControls, type GamepadReading } from '$lib/controls/gamepad/GamepadControls';
 
 	let canvas: HTMLCanvasElement;
 	let stats = $state<ViewportStats>({
@@ -43,44 +45,50 @@
 				console.error('Viewport.start failed:', err);
 			});
 
-		// Development keyboard mapping (OPENRIDE-BLUEPRINT.md §27). Full gamepad +
-		// configurable input is M22.
-		const held = new Set<string>();
-		const applyAnalog = () => {
-			const left = held.has('a') || held.has('arrowleft');
-			const right = held.has('d') || held.has('arrowright');
-			viewport.setControls({
-				throttle: held.has('w') || held.has('arrowup') ? 1 : 0,
-				frontBrake: held.has('s') || held.has('arrowdown') ? 1 : 0,
-				rearBrake: held.has('s') || held.has('arrowdown') ? 1 : 0,
-				steeringInput: (right ? 1 : 0) - (left ? 1 : 0)
-			});
-			viewport.setClutchEngaged(!(held.has('shift') || held.has('c')));
-		};
-		const down = (e: KeyboardEvent) => {
-			const k = e.key.toLowerCase();
-			if (!held.has(k)) {
-				if (k === 'e') viewport.shiftUp();
-				else if (k === 'q') viewport.shiftDown();
-				else if (k === 'r') viewport.restartEngine();
-				else if (k === '1') viewport.toggleAssist('abs');
-				else if (k === '2') viewport.toggleAssist('tractionControl');
-				else if (k === '3') viewport.toggleAssist('wheelieControl');
-				else if (k === 'v') viewport.toggleView();
+		// Keyboard (OPENRIDE-BLUEPRINT.md §27) and gamepad (M22) both stay wired.
+		const detachKeyboard = attachKeyboardControls({
+			setAnalog: (c) => viewport.setControls(c),
+			setClutchEngaged: (engaged) => viewport.setClutchEngaged(engaged),
+			shiftUp: () => viewport.shiftUp(),
+			shiftDown: () => viewport.shiftDown(),
+			restartEngine: () => viewport.restartEngine(),
+			toggleAssist: (a) => viewport.toggleAssist(a),
+			toggleView: () => viewport.toggleView()
+		});
+
+		// Poll the gamepad each frame; it takes over once actually touched so a
+		// connected-but-idle pad never fights the keyboard.
+		const pad = new GamepadControls();
+		let padRaf = 0;
+		const pollPad = () => {
+			const gp = navigator.getGamepads?.().find((g): g is Gamepad => g != null) ?? null;
+			const reading: GamepadReading | null = gp
+				? {
+						axes: gp.axes,
+						buttons: gp.buttons.map((b) => ({ pressed: b.pressed, value: b.value }))
+					}
+				: null;
+			const tick = pad.poll(reading);
+			if (tick.owning) {
+				viewport.setControls({
+					throttle: tick.controls.throttle,
+					frontBrake: tick.controls.frontBrake,
+					rearBrake: tick.controls.rearBrake,
+					steeringInput: tick.controls.steeringInput
+				});
+				viewport.setClutchInput(tick.controls.clutch);
+				if (tick.events.gearUp) viewport.shiftUp();
+				if (tick.events.gearDown) viewport.shiftDown();
+				if (tick.events.restart) viewport.restartEngine();
+				if (tick.events.toggleView) viewport.toggleView();
 			}
-			held.add(k);
-			applyAnalog();
+			padRaf = requestAnimationFrame(pollPad);
 		};
-		const up = (e: KeyboardEvent) => {
-			held.delete(e.key.toLowerCase());
-			applyAnalog();
-		};
-		window.addEventListener('keydown', down);
-		window.addEventListener('keyup', up);
+		padRaf = requestAnimationFrame(pollPad);
 
 		return () => {
-			window.removeEventListener('keydown', down);
-			window.removeEventListener('keyup', up);
+			detachKeyboard();
+			cancelAnimationFrame(padRaf);
 			viewport.dispose();
 		};
 	});
@@ -115,8 +123,9 @@
 		<pre class="error" data-testid="start-error">{startError}</pre>
 	{/if}
 	<div class="help">
-		W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart · 1/2/3
-		ABS/TC/wheelie · V view
+		Keyboard: W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart · 1/2/3
+		ABS/TC/wheelie · V view — or a gamepad: RT/LT throttle+brake, left stick steer, LB clutch, RB
+		rear brake, A/B gear, Start restart, Back view
 	</div>
 </div>
 

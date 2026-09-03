@@ -152,9 +152,14 @@ export class Viewport {
 		Object.assign(this.controls, partial);
 	}
 
-	/** Keyboard/gamepad clutch: true = engaged. The value eases toward this. */
+	/** Keyboard clutch: true = engaged. The value eases toward this. */
 	setClutchEngaged(engaged: boolean): void {
 		this.clutchTarget = engaged ? 1 : 0;
+	}
+
+	/** Gamepad analog clutch: 1 = engaged, 0 = pulled in. The value eases toward this. */
+	setClutchInput(value01: number): void {
+		this.clutchTarget = Number.isFinite(value01) ? Math.min(1, Math.max(0, value01)) : 1;
 	}
 
 	shiftUp(): void {
