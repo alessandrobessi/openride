@@ -26,6 +26,8 @@ export interface CreateMotorcycleRigOptions {
 	rider?: RiderProfile;
 	/** Assist configuration. Default: all safety assists on. */
 	assists?: AssistConfig;
+	/** Spawn pose. Default: local origin, facing +z. `y` defaults to ride-height. */
+	spawn?: { x: number; y?: number; z: number; headingRad?: number };
 }
 
 // Rough bike-sized cuboid for future terrain/crash collision. Sensor-only in M3.
@@ -47,7 +49,12 @@ export async function createMotorcycleRig(
 			y: inertia.yawKgM2,
 			z: inertia.rollKgM2
 		},
-		positionM: { x: 0, y: Motorcycle.spawnHeightM(config), z: 0 },
+		positionM: {
+			x: options.spawn?.x ?? 0,
+			y: options.spawn?.y ?? Motorcycle.spawnHeightM(config),
+			z: options.spawn?.z ?? 0
+		},
+		headingRad: options.spawn?.headingRad ?? 0,
 		halfExtentsM: CHASSIS_HALF_EXTENTS_M
 	});
 

@@ -132,8 +132,9 @@ export function haversineDistanceM(a: GeoPoint, b: GeoPoint): number {
 }
 
 /**
- * World origin for the Stelvio prototype — Passo dello Stelvio summit. The
- * offline world builder writes the authoritative origin into the world manifest
- * (M18); this constant anchors the coordinate module and its tests until then.
+ * World origin for the Stelvio prototype — the *start* of the extracted SS38
+ * climb (near Trafoi, ~1604 m), so the ride begins near local (0, 0, 0) and
+ * climbs. The offline world builder / manifest carries the authoritative origin
+ * (M18); this constant anchors the coordinate module and its tests.
  */
-export const STELVIO_ORIGIN: GeoPoint = { latDeg: 46.52859, lonDeg: 10.45259, altM: 2758 };
+export const STELVIO_ORIGIN: GeoPoint = { latDeg: 46.5476, lonDeg: 10.5055, altM: 1604 };

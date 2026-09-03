@@ -5,7 +5,7 @@ import { createScene, type TestScene } from './scene/createScene';
 import { createLighting, type Lighting } from './lighting/createLighting';
 import { createCamera, type InspectionCamera } from './camera/createCamera';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
-import { type Transform } from '$lib/simulation/physics/RapierWorld';
+import { RapierWorld, type Transform } from '$lib/simulation/physics/RapierWorld';
 import {
 	createMotorcycleRig,
 	type MotorcycleRig
@@ -13,7 +13,7 @@ import {
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
 import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 import { LocalFrame, STELVIO_ORIGIN } from '$lib/world/geo/enu';
-import { loadRoadPackage } from '$lib/world/roads/RoadPackage';
+import { fetchRoadMesh, type LoadedRoadMesh } from '$lib/world/roads/loadRoadMesh';
 import { asset } from '$lib/paths';
 
 /**
@@ -148,35 +148,56 @@ export class Viewport {
 	async start(onStats?: (stats: ViewportStats) => void): Promise<void> {
 		this.onStats = onStats;
 
-		const rig = await createMotorcycleRig(ADVENTURE_1200);
+		// Try to build the world on the real Stelvio road; fall back to the flat
+		// test plane if the world package can't be loaded.
+		let road: LoadedRoadMesh | undefined;
+		try {
+			road = await fetchRoadMesh(asset('worlds/stelvio/roads'));
+		} catch (err) {
+			console.warn('Stelvio road package unavailable — using the flat test plane:', err);
+		}
+		if (this.disposed) return;
+
+		let rig: MotorcycleRig;
+		if (road) {
+			const world = await RapierWorld.create();
+			world.addStaticGround(2000, 1, -40); // safety floor far below the road
+			world.addTrimeshCollider(road.collision.positions, road.collision.indices);
+			rig = await createMotorcycleRig(ADVENTURE_1200, {
+				world,
+				withGround: false,
+				spawn: road.index.spawn
+			});
+			this.addRoadSurface(road);
+		} else {
+			rig = await createMotorcycleRig(ADVENTURE_1200);
+		}
 		if (this.disposed) {
 			rig.world.dispose();
 			return;
 		}
+
 		this.rig = rig;
 		this.buildDebugMotorcycle();
 		this.prevTransform = rig.world.getTransform(rig.chassisHandle);
 		this.currTransform = this.prevTransform;
 
 		this.loop.start();
-		void this.loadDebugRoad();
 	}
 
-	/** Draw the extracted Stelvio centreline as a debug polyline (M14). */
-	private async loadDebugRoad(): Promise<void> {
-		try {
-			const road = await loadRoadPackage(asset('worlds/stelvio/roads/ss38.json'));
-			if (this.disposed) return;
-			const pts = road.centerline.map((p) => new THREE.Vector3(p.x, p.y ?? 0.2, p.z));
-			const geom = new THREE.BufferGeometry().setFromPoints(pts);
-			const mat = new THREE.LineBasicMaterial({ color: 0xffb454 });
-			const line = new THREE.Line(geom, mat);
-			line.name = 'debug-road';
-			this.testScene.scene.add(line);
-			this.track(geom, mat);
-		} catch (err) {
-			console.warn('debug road overlay unavailable:', err);
-		}
+	private addRoadSurface(road: LoadedRoadMesh): void {
+		const geom = new THREE.BufferGeometry();
+		geom.setAttribute('position', new THREE.BufferAttribute(road.surface.positions, 3));
+		geom.setAttribute('normal', new THREE.BufferAttribute(road.surface.normals, 3));
+		geom.setAttribute('uv', new THREE.BufferAttribute(road.surface.uvs, 2));
+		geom.setIndex(new THREE.BufferAttribute(road.surface.indices, 1));
+		const mat = new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.95 });
+		const mesh = new THREE.Mesh(geom, mat);
+		mesh.name = 'road-surface';
+		this.testScene.scene.add(mesh);
+		this.track(geom, mat);
+		// The flat test plane is just noise once we're on the real road.
+		this.testScene.ground.visible = false;
 	}
 
 	stop(): void {

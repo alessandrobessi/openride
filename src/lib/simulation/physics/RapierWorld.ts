@@ -35,6 +35,8 @@ export interface ChassisBodyOptions {
 	positionM: Vec3;
 	/** Cuboid collider half-extents (crash geometry only in M3; a sensor). */
 	halfExtentsM: Vec3;
+	/** Initial heading about +y, radians (atan2(dx, dz)). Default 0 (facing +z). */
+	headingRad?: number;
 }
 
 export interface RaycastHit {
@@ -97,9 +99,11 @@ export class RapierWorld {
 	 */
 	addChassis(options: ChassisBodyOptions): number {
 		const { massKg, principalInertiaKgM2: I, positionM: p, halfExtentsM: h } = options;
+		const halfHeading = (options.headingRad ?? 0) / 2;
 		const body = this.world.createRigidBody(
 			RAPIER.RigidBodyDesc.dynamic()
 				.setTranslation(p.x, p.y, p.z)
+				.setRotation({ x: 0, y: Math.sin(halfHeading), z: 0, w: Math.cos(halfHeading) })
 				.setAdditionalMassProperties(
 					massKg,
 					{ x: 0, y: 0, z: 0 },
@@ -219,6 +223,14 @@ export class RapierWorld {
 			},
 			normalWorld: { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z }
 		};
+	}
+
+	/**
+	 * Add a static triangle-mesh collider (e.g. the road surface). `positions` is
+	 * flat xyz, `indices` triples into it.
+	 */
+	addTrimeshCollider(positions: Float32Array, indices: Uint32Array): void {
+		this.world.createCollider(RAPIER.ColliderDesc.trimesh(positions, indices));
 	}
 
 	/** Advance the physics world by one fixed step of `dtS` seconds. */

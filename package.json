@@ -23,7 +23,8 @@
 		"world:fetch-dem": "tsx tools/elevation/fetch-dem.ts",
 		"world:extract": "tsx tools/osm/extract-road.ts",
 		"world:elevation": "tsx tools/elevation/sample-elevation.ts",
-		"world:build": "pnpm world:extract && pnpm world:elevation"
+		"world:mesh": "tsx tools/world-builder/build-road-mesh.ts",
+		"world:build": "pnpm world:extract && pnpm world:elevation && pnpm world:mesh"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.17.0",

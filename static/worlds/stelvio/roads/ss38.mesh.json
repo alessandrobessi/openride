@@ -1,0 +1,20 @@
+{
+	"roadId": "stelvio-ss38",
+	"widthM": 6,
+	"surface": {
+		"file": "ss38.surface.bin",
+		"vertexCount": 2106,
+		"indexCount": 6312
+	},
+	"collision": {
+		"file": "ss38.collision.bin",
+		"vertexCount": 2106,
+		"indexCount": 6312
+	},
+	"spawn": {
+		"x": -0.039,
+		"y": 1.14,
+		"z": -12.08,
+		"headingRad": 3.13434
+	}
+}
