@@ -56,7 +56,8 @@ export function createCockpit(): Cockpit {
 			side: THREE.DoubleSide
 		})
 	);
-	const dark = track(new THREE.MeshBasicMaterial({ color: 0x0a0c0e }));
+	// The cluster face gets its own material so M21 can attach a live texture map.
+	const clusterFaceMat = track(new THREE.MeshBasicMaterial({ color: 0x0a0c0e }));
 
 	const add = (
 		geom: THREE.BufferGeometry,
@@ -88,14 +89,16 @@ export function createCockpit(): Cockpit {
 		});
 	}
 
-	// Instrument cluster shell, tilted toward the rider, plus its blank face.
-	add(new THREE.BoxGeometry(0.2, 0.12, 0.06), plastic, (m) => {
-		m.rotation.x = 0.6;
-		m.position.set(0, 0.45, 0.34);
+	// Instrument cluster: a shallow housing behind/below the screen so it never
+	// occludes it, and the live face angled up toward the rider's eye.
+	add(new THREE.BoxGeometry(0.24, 0.07, 0.14), plastic, (m) => {
+		m.rotation.x = 0.5;
+		m.position.set(0, 0.45, 0.33);
 	});
-	const clusterFace = add(new THREE.PlaneGeometry(0.17, 0.09), dark, (m) => {
-		m.rotation.x = 0.6;
-		m.position.set(0, 0.463, 0.37);
+	const clusterFace = add(new THREE.PlaneGeometry(0.22, 0.115), clusterFaceMat, (m) => {
+		// Normal points up-and-back at the eye; Rz(pi) keeps the readout upright.
+		m.rotation.set(Math.PI + 0.42, 0, Math.PI);
+		m.position.set(0, 0.5, 0.36);
 	});
 	clusterFace.name = 'cluster-face';
 

@@ -6,6 +6,10 @@ import { createLighting, type Lighting } from './lighting/createLighting';
 import { createCamera, type InspectionCamera } from './camera/createCamera';
 import { createFirstPersonCamera, type FirstPersonCamera } from './camera/createFirstPersonCamera';
 import { createCockpit, type Cockpit } from './cockpit/createCockpit';
+import {
+	createInstrumentCluster,
+	type InstrumentCluster
+} from './cockpit/instruments/InstrumentCluster';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { RapierWorld, type Transform } from '$lib/simulation/physics/RapierWorld';
 import {
@@ -98,6 +102,7 @@ export class Viewport {
 	/** The M3 debug primitives (box + axes + wheel discs); hidden in cockpit view. */
 	private debugGroup: THREE.Group | undefined;
 	private cockpit: Cockpit | undefined;
+	private cluster: InstrumentCluster | undefined;
 	/** First-person cockpit is the default ride view (M20); 'chase' is the debug orbit cam. */
 	private viewMode: 'cockpit' | 'chase' = 'cockpit';
 	private frontContactMarker: THREE.Mesh | undefined;
@@ -430,6 +435,14 @@ export class Viewport {
 		group.add(this.cockpit.group);
 		this.track(this.cockpit);
 
+		// Live instrument cluster (M21) painted onto the cockpit's cluster face.
+		this.cluster = createInstrumentCluster();
+		const faceMat = this.cockpit.clusterFace.material as THREE.MeshBasicMaterial;
+		faceMat.map = this.cluster.texture;
+		faceMat.color.set(0xffffff);
+		faceMat.needsUpdate = true;
+		this.track(this.cluster);
+
 		// Cockpit is the default view: show the cockpit, hide the debug rig.
 		debug.visible = false;
 		this.cockpit.group.visible = true;
@@ -504,6 +517,22 @@ export class Viewport {
 				this.worldManager.update(p.x, p.z);
 				const s = this.worldManager.statsAt(p.x, p.z);
 				this.streamStats = { activeChunks: s.activeChunks, chunkId: s.currentChunkId ?? '—' };
+			}
+
+			// Repaint the instrument cluster from sampled state (M21).
+			if (this.cluster && this.viewMode === 'cockpit') {
+				const s = motorcycle.state;
+				this.cluster.update({
+					speedKmh: s.forwardSpeedMps * 3.6,
+					rpm: s.engineRPM,
+					redlineRpm: ADVENTURE_1200.powertrain.engine.redlineRPM,
+					gear: s.gear,
+					stalled: s.engineStalled,
+					absEnabled: motorcycle.isAssistEnabled('abs'),
+					absActive: s.absActive,
+					tcEnabled: motorcycle.isAssistEnabled('tractionControl'),
+					tcActive: s.tractionControlActive
+				});
 			}
 		}
 
