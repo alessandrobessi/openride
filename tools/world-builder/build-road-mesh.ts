@@ -122,7 +122,7 @@ function main(): void {
 
 	const widthM = roadWidthM(road);
 	const surface = buildRibbon(cl, widthM / 2, true);
-	const collision = buildRibbon(cl, widthM / 2 + 0.4, false); // a little wider, physics only
+	const collision = buildRibbon(cl, widthM / 2 + 3.5, false); // a flush drivable shoulder past the paint (physics only)
 
 	// Spawn a couple of metres in from the ribbon start so both wheels are on it.
 	let spawnIdx = 0;

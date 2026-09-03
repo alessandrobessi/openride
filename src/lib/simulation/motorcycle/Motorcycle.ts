@@ -570,10 +570,21 @@ export class Motorcycle {
 		let normalWorld = UP_WORLD;
 
 		if (hit) {
-			compressionM = clampCompressionM(
+			const rawCompressionM = clampCompressionM(
 				this.zeroCompressionReachM - hit.distanceM,
 				wheel.suspension
 			);
+			// Rate-limit how fast the strut is allowed to *compress*: the raycast
+			// distance steps discontinuously across a mesh seam (the road ribbon
+			// meeting the terrain heightfield at its edge), and letting that slam the
+			// strut to full travel in one frame fires the bump stop for a ~100 kN
+			// spike that launches the bike. A real strut can't compress faster than
+			// its damper bleeds; extension (toward topped-out) is left free.
+			const maxCompressStepM = SUSPENSION_VEL_LIMIT_MPS * dtS;
+			compressionM =
+				rawCompressionM > prevCompression
+					? Math.min(rawCompressionM, prevCompression + maxCompressStepM)
+					: rawCompressionM;
 			grounded = compressionM > 0;
 			contactWorld = hit.pointWorldM;
 			normalWorld = hit.normalWorld;
