@@ -33,6 +33,8 @@ import type {
 	TerrainIndex
 } from '$lib/world/terrain/TerrainChunk';
 import { WorldManager, type ChunkSink } from '$lib/world/streaming/WorldManager';
+import { fetchScenery } from '$lib/world/scenery/loadScenery';
+import { createRoadFurniture, type RoadFurniture } from './environment/RoadFurniture';
 import { asset } from '$lib/paths';
 
 /** The world package the ride stage boots. */
@@ -126,6 +128,9 @@ export class Viewport {
 	private readonly terrainColliders = new Map<string, number>();
 	private readonly terrainMeshes = new Map<string, THREE.Mesh>();
 	private streamStats = { activeChunks: 0, chunkId: '—' };
+
+	/** Static scenery (M25–M28). */
+	private roadFurniture: RoadFurniture | undefined;
 
 	private frameCount = 0;
 	private disposed = false;
@@ -257,6 +262,7 @@ export class Viewport {
 				spawn: manifest.spawn
 			});
 			this.addRoadSurface(road);
+			await this.loadEnvironment(worldDir, manifest);
 		} else {
 			rig = await createMotorcycleRig(ADVENTURE_1200);
 		}
@@ -277,6 +283,21 @@ export class Viewport {
 		}
 
 		this.loop.start();
+	}
+
+	/** Load and instance the static scenery package (M25–M28). Non-critical. */
+	private async loadEnvironment(worldDir: string, manifest: WorldManifest): Promise<void> {
+		if (!manifest.assets.scenery) return;
+		try {
+			const scenery = await fetchScenery(`${worldDir}/${manifest.assets.scenery}`);
+			if (this.disposed) return;
+			if (scenery.furniture) {
+				this.roadFurniture = createRoadFurniture(scenery.furniture);
+				this.testScene.scene.add(this.roadFurniture.group);
+			}
+		} catch (err) {
+			console.warn('Scenery package unavailable — skipping:', err);
+		}
 	}
 
 	private addRoadSurface(road: LoadedRoadMesh): void {
@@ -400,6 +421,7 @@ export class Viewport {
 		this.worldManager?.dispose();
 		this.terrainColliders.clear();
 		this.terrainMeshes.clear();
+		this.roadFurniture?.dispose();
 		this.engineAudio.dispose();
 		this.ambientAudio.dispose();
 		this.fpCamera.dispose();

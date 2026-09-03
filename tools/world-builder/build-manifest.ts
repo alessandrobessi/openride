@@ -12,6 +12,7 @@ import { WORLD_MANIFEST_VERSION } from '../../src/lib/world/WorldManifest';
 const WORLD_DIR = resolve(import.meta.dirname, '../../static/worlds/stelvio');
 const ROADS_DIR = resolve(WORLD_DIR, 'roads');
 const TERRAIN_DIR = resolve(WORLD_DIR, 'terrain');
+const SCENERY_DIR = resolve(WORLD_DIR, 'scenery');
 
 interface RoadPackage {
 	id: string;
@@ -37,13 +38,19 @@ function main(): void {
 		throw new Error(`missing pipeline output: ${resolve(TERRAIN_DIR, 'index.json')}`);
 	}
 
+	const hasScenery = existsSync(resolve(SCENERY_DIR, 'index.json'));
+
 	const manifest = {
 		version: WORLD_MANIFEST_VERSION,
 		id: 'stelvio',
 		name: road.name,
 		origin: road.origin,
 		spawn: mesh.spawn,
-		assets: { roads: 'roads', terrain: 'terrain' },
+		assets: {
+			roads: 'roads',
+			terrain: 'terrain',
+			...(hasScenery ? { scenery: 'scenery' } : {})
+		},
 		metadata: {
 			region: 'Alps — Stelvio Pass (SS38), Italy',
 			roadLengthM: road.lengthM,

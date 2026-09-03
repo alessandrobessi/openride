@@ -5,6 +5,9 @@ test-results/
 playwright-report/
 pnpm-lock.yaml
 
+# Generated world data (compact on purpose).
+static/worlds/**
+
 # Verbatim specification documents — keep original formatting.
 OPENRIDE-BLUEPRINT.md
 MOTORCYCLE-PHYSICS.md

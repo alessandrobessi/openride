@@ -1,0 +1,14 @@
+{
+	"worldId": "stelvio",
+	"bounds": {
+		"minX": -2517.425,
+		"minZ": -1782.527,
+		"maxX": 66.225,
+		"maxZ": 35.919
+	},
+	"furniture": {
+		"file": "furniture.json",
+		"postCount": 5344,
+		"railCount": 4188
+	}
+}

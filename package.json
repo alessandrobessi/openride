@@ -25,8 +25,9 @@
 		"world:elevation": "tsx tools/elevation/sample-elevation.ts",
 		"world:mesh": "tsx tools/world-builder/build-road-mesh.ts",
 		"world:terrain": "tsx tools/terrain/build-terrain.ts",
+		"world:scenery": "tsx tools/world-builder/build-scenery.ts",
 		"world:manifest": "tsx tools/world-builder/build-manifest.ts",
-		"world:build": "pnpm world:extract && pnpm world:elevation && pnpm world:mesh && pnpm world:terrain && pnpm world:manifest"
+		"world:build": "pnpm world:extract && pnpm world:elevation && pnpm world:mesh && pnpm world:terrain && pnpm world:scenery && pnpm world:manifest"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.17.0",

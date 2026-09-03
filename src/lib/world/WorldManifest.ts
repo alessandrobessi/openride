@@ -25,6 +25,8 @@ export interface WorldAssetRefs {
 	roads: string;
 	/** Directory holding the terrain chunks + index, relative to the manifest. */
 	terrain: string;
+	/** Directory holding the scenery package (furniture / vegetation / buildings). */
+	scenery?: string;
 }
 
 export interface WorldManifest {
@@ -82,8 +84,13 @@ export function assertWorldManifest(value: unknown): asserts value is WorldManif
 	if (!a || typeof a !== 'object') fail('missing assets');
 	if (typeof a.roads !== 'string' || !a.roads) fail('assets.roads must be a directory path');
 	if (typeof a.terrain !== 'string' || !a.terrain) fail('assets.terrain must be a directory path');
-	for (const dir of [a.roads, a.terrain]) {
-		if (dir.startsWith('/') || dir.includes('..')) fail(`asset path "${dir}" must be relative`);
+	if (a.scenery !== undefined && (typeof a.scenery !== 'string' || !a.scenery)) {
+		fail('assets.scenery must be a directory path when present');
+	}
+	for (const dir of [a.roads, a.terrain, a.scenery]) {
+		if (dir !== undefined && (dir.startsWith('/') || dir.includes('..'))) {
+			fail(`asset path "${dir}" must be relative`);
+		}
 	}
 
 	if (m.metadata !== undefined && (typeof m.metadata !== 'object' || m.metadata === null)) {
