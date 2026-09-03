@@ -12,6 +12,7 @@ import {
 } from '$lib/simulation/physics/createMotorcycleRig';
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
 import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
+import { LocalFrame, STELVIO_ORIGIN } from '$lib/world/geo/enu';
 
 /**
  * Owns the WebGL renderer, the test scene, the inspection camera, the fixed-step
@@ -41,6 +42,8 @@ export interface ViewportStats {
 	tcActive: boolean;
 	absOn: boolean;
 	tcOn: boolean;
+	latDeg: number;
+	lonDeg: number;
 }
 
 const FIXED_DT_S = 1 / 120;
@@ -63,6 +66,8 @@ export class Viewport {
 	private readonly resizeObserver: ResizeObserver;
 
 	private readonly simLoop = new SimulationLoop({ fixedDtS: FIXED_DT_S });
+	/** Debug: report the chassis position back as geographic coordinates (M13). */
+	private readonly geoFrame = new LocalFrame(STELVIO_ORIGIN);
 	private rig: MotorcycleRig | undefined;
 	private readonly controls: MotorcycleControls = { ...NEUTRAL_CONTROLS };
 	/** Keyboard sets a target; the clutch eases toward it so takeup is smooth. */
@@ -128,6 +133,13 @@ export class Viewport {
 	toggleAssist(assist: 'abs' | 'tractionControl' | 'wheelieControl'): void {
 		const m = this.rig?.motorcycle;
 		if (m) m.setAssistEnabled(assist, !m.isAssistEnabled(assist));
+	}
+
+	private geoFromChassis(): { latDeg: number; lonDeg: number } {
+		const p = this.rig?.motorcycle.state.positionWorldM;
+		if (!p) return { latDeg: STELVIO_ORIGIN.latDeg, lonDeg: STELVIO_ORIGIN.lonDeg };
+		const g = this.geoFrame.toGeo({ x: p.x, y: p.y, z: p.z });
+		return { latDeg: g.latDeg, lonDeg: g.lonDeg };
 	}
 
 	/** Build the physics world + motorcycle rig and begin rendering. */
@@ -274,7 +286,8 @@ export class Viewport {
 				absActive: this.rig?.motorcycle.state.absActive ?? false,
 				tcActive: this.rig?.motorcycle.state.tractionControlActive ?? false,
 				absOn: this.rig?.motorcycle.isAssistEnabled('abs') ?? true,
-				tcOn: this.rig?.motorcycle.isAssistEnabled('tractionControl') ?? true
+				tcOn: this.rig?.motorcycle.isAssistEnabled('tractionControl') ?? true,
+				...this.geoFromChassis()
 			});
 		}
 	}

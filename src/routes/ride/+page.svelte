@@ -21,7 +21,9 @@
 		absActive: false,
 		tcActive: false,
 		absOn: true,
-		tcOn: true
+		tcOn: true,
+		latDeg: 0,
+		lonDeg: 0
 	});
 	let frames = $state(0);
 
@@ -95,6 +97,7 @@
 		>
 		<span class:muted={!stats.absOn} class:live={stats.absActive}>ABS</span>
 		<span class:muted={!stats.tcOn} class:live={stats.tcActive}>TC</span>
+		<span>{stats.latDeg.toFixed(5)}, {stats.lonDeg.toFixed(5)}</span>
 	</div>
 	<div class="help">
 		W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart · 1/2/3
