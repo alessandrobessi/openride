@@ -33,6 +33,7 @@ async function ride(opts: {
 		});
 	}
 	rig.world.setLinearVelocity(rig.chassisHandle, { x: 0, y: 0, z: opts.initialSpeedMps });
+	rig.motorcycle.resyncWheelsToGround();
 	rig.motorcycle.selectGear(opts.gear);
 
 	let maxRollRate = 0;
@@ -89,6 +90,7 @@ describe('M7 virtual rider (headless)', () => {
 			});
 		}
 		rig.world.setLinearVelocity(rig.chassisHandle, { x: 0, y: 0, z: 12 });
+		rig.motorcycle.resyncWheelsToGround();
 		rig.motorcycle.selectGear(3);
 		// kick: a roll-rate impulse about the forward axis
 		rig.world.setAngularVelocity(rig.chassisHandle, { x: 0, y: 0, z: 1.5 });

@@ -15,7 +15,9 @@
 		rollDeg: 0,
 		targetLeanDeg: 0,
 		frontLoadN: 0,
-		rearLoadN: 0
+		rearLoadN: 0,
+		frontGrip: 0,
+		rearGrip: 0
 	});
 	let frames = $state(0);
 
@@ -81,6 +83,9 @@
 		<span>lean {stats.rollDeg.toFixed(0)}° / {stats.targetLeanDeg.toFixed(0)}°</span>
 		{#if stats.stalled}<span class="warn">STALLED</span>{/if}
 		<span>Fz {(stats.frontLoadN / 1000).toFixed(2)}/{(stats.rearLoadN / 1000).toFixed(2)} kN</span>
+		<span
+			>grip {Math.min(stats.frontGrip, 2).toFixed(2)}/{Math.min(stats.rearGrip, 2).toFixed(2)}</span
+		>
 	</div>
 	<div class="help">
 		W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart

@@ -31,6 +31,7 @@ async function steadyCorner(opts: {
 		});
 	}
 	rig.world.setLinearVelocity(rig.chassisHandle, { x: 0, y: 0, z: opts.speedMps });
+	rig.motorcycle.resyncWheelsToGround();
 	rig.motorcycle.selectGear(opts.gear);
 
 	const controls = { ...NEUTRAL, throttle: opts.throttle, steeringInput: opts.steeringInput };

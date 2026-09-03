@@ -33,6 +33,7 @@ async function steeringStep() {
 		});
 	}
 	rig.world.setLinearVelocity(rig.chassisHandle, { x: 0, y: 0, z: 20 });
+	rig.motorcycle.resyncWheelsToGround();
 	rig.motorcycle.selectGear(4);
 
 	// hold straight briefly, then step to +0.5

@@ -35,6 +35,8 @@ export interface ViewportStats {
 	targetLeanDeg: number;
 	frontLoadN: number;
 	rearLoadN: number;
+	frontGrip: number;
+	rearGrip: number;
 }
 
 const FIXED_DT_S = 1 / 120;
@@ -257,7 +259,9 @@ export class Viewport {
 				rollDeg: ((this.rig?.motorcycle.state.rollRad ?? 0) * 180) / Math.PI,
 				targetLeanDeg: ((this.rig?.motorcycle.state.targetLeanRad ?? 0) * 180) / Math.PI,
 				frontLoadN: this.rig?.motorcycle.state.frontNormalLoadN ?? 0,
-				rearLoadN: this.rig?.motorcycle.state.rearNormalLoadN ?? 0
+				rearLoadN: this.rig?.motorcycle.state.rearNormalLoadN ?? 0,
+				frontGrip: this.rig?.motorcycle.state.frontGripUtilization ?? 0,
+				rearGrip: this.rig?.motorcycle.state.rearGripUtilization ?? 0
 			});
 		}
 	}

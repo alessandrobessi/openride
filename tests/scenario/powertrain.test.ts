@@ -83,6 +83,7 @@ describe('M6 clutch + gearbox (headless)', () => {
 		// In gear, throttle closed.
 		const inGear = await makeRig();
 		inGear.rig.world.setLinearVelocity(inGear.rig.chassisHandle, { x: 0, y: 0, z: 30 });
+		inGear.rig.motorcycle.resyncWheelsToGround();
 		inGear.rig.motorcycle.selectGear(3);
 		inGear.step(1.5, (m) => m.setControls({ ...NEUTRAL, throttle: 0, clutch: 1 }));
 		const inGearV = inGear.rig.motorcycle.state.forwardSpeedMps;
@@ -90,6 +91,7 @@ describe('M6 clutch + gearbox (headless)', () => {
 
 		const neutral = await makeRig();
 		neutral.rig.world.setLinearVelocity(neutral.rig.chassisHandle, { x: 0, y: 0, z: 30 });
+		neutral.rig.motorcycle.resyncWheelsToGround();
 		neutral.rig.motorcycle.selectGear(0);
 		neutral.step(1.5, (m) => m.setControls(NEUTRAL));
 		const neutralV = neutral.rig.motorcycle.state.forwardSpeedMps;
@@ -108,12 +110,18 @@ describe('M6 clutch + gearbox (headless)', () => {
 				sampled = Math.max(sampled, m.state.driveForceN);
 			}
 		});
-		// The massless ideal (§8) is ≈ 125·11.357·0.94/0.315 ≈ 4235 N. Ours is
-		// well below that during hard acceleration because engine rotational
-		// inertia reflected through the 11.36:1 first-gear reduction absorbs a
-		// large share of the crank torque — real, and not yet grip-limited (M10).
-		expect(sampled).toBeGreaterThan(1800);
-		expect(sampled).toBeLessThan(4235);
+		// First gear has far more torque than grip: from M10 the rear tractive
+		// force is limited to ≈ µ·F_zr ≈ 1.15 · 1490 ≈ 1710 N (static rear load,
+		// no weight transfer yet). It is traction-limited, as a real bike is.
+		const geo = ADVENTURE_1200.physical.geometry;
+		const rearStaticFraction = (geo.wheelbaseM - geo.cgFromRearAxleM) / geo.wheelbaseM; // ≈ 0.46
+		const rearGripLimitN =
+			DRY_ASPHALT.muLongitudinal *
+			ADVENTURE_1200.physical.mass.totalKg *
+			9.80665 *
+			rearStaticFraction;
+		expect(sampled).toBeGreaterThan(rearGripLimitN * 0.8);
+		expect(sampled).toBeLessThan(rearGripLimitN * 1.25);
 		rig.world.dispose();
 	});
 });

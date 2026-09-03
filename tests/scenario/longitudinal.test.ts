@@ -44,6 +44,7 @@ async function run(opts: RunOptions) {
 	}
 	if (opts.initialSpeedMps) {
 		rig.world.setLinearVelocity(rig.chassisHandle, { x: 0, y: 0, z: opts.initialSpeedMps });
+		rig.motorcycle.resyncWheelsToGround();
 	}
 	rig.motorcycle.selectGear(opts.gear ?? 0);
 
@@ -99,12 +100,16 @@ describe('M4 longitudinal dynamics (headless)', () => {
 		expect(finalV).toBeLessThan(30); // bounded by drag + rr
 	});
 
-	it('front brake from 30 m/s sheds most speed within a few seconds (grip-unlimited in M4)', async () => {
-		const { finalV } = await run({
+	it('front brake sheds speed at a grip-limited rate (front tyre only, M10)', async () => {
+		const { speeds, finalV } = await run({
 			initialSpeedMps: 30,
 			controls: { frontBrake: 1 },
 			durationS: 3
 		});
-		expect(finalV).toBeLessThan(5);
+		const decel = (speeds[0].v - finalV) / (speeds[speeds.length - 1].t - speeds[0].t);
+		// Front-only braking is limited to ≈ µ·F_zf (static load — no weight
+		// transfer yet): a few m/s², not the M4 grip-unlimited stop.
+		expect(decel).toBeGreaterThan(4);
+		expect(decel).toBeLessThan(8);
 	});
 });

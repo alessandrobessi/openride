@@ -63,6 +63,9 @@ export interface MotorcycleState {
 	rearSlipRatio: number;
 	frontSlipAngleRad: number;
 	rearSlipAngleRad: number;
+	/** Grip utilisation U = √(Fx²+Fy²)/(µ·Fz); ≥ 1 means saturated (§84). */
+	frontGripUtilization: number;
+	rearGripUtilization: number;
 }
 
 export function createMotorcycleState(): MotorcycleState {
@@ -106,6 +109,8 @@ export function createMotorcycleState(): MotorcycleState {
 		frontSlipRatio: 0,
 		rearSlipRatio: 0,
 		frontSlipAngleRad: 0,
-		rearSlipAngleRad: 0
+		rearSlipAngleRad: 0,
+		frontGripUtilization: 0,
+		rearGripUtilization: 0
 	};
 }

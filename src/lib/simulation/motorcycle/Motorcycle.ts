@@ -1,9 +1,20 @@
-import { clamp, cross, dot, normalize, scale, toYawPitchRoll, vec3, type Vec3 } from '../core/math';
+import {
+	add,
+	clamp,
+	cross,
+	dot,
+	normalize,
+	scale,
+	toYawPitchRoll,
+	vec3,
+	type Vec3
+} from '../core/math';
 import { clampCompressionM, suspensionForceN } from '../suspension/suspension';
 import { Engine } from '../engine/Engine';
 import { dragForceN } from '../aero/drag';
 import { rollingResistanceForceN } from '../tires/rollingResistance';
-import { brakeForcesN } from '../brakes/brakes';
+import { slipAngleRad, slipRatio } from '../tires/slip';
+import { clampToFrictionEllipse } from '../tires/frictionEllipse';
 import { Drivetrain } from '../drivetrain/Drivetrain';
 import { BalanceController } from '../rider/BalanceController';
 import { SteeringController } from '../rider/SteeringController';
@@ -53,10 +64,14 @@ export interface MotorcycleEnvironment {
  * - M5 — engine as an isolated rotational system.
  * - M6 — clutch + gearbox + final drive: the engine drives (and back-drives) the
  *   rear contact patch.
- * - M7 — virtual rider: a speed-scaled balance controller (with gravity
- *   feed-forward) keeps the bike upright and leans it toward a steering target;
- *   a temporary yaw-rate tracker turns the bike. Real lean dynamics (M8),
- *   countersteering (M9), tyre forces (M10) and weight transfer (M11) follow.
+ * - M7 — virtual rider: a speed-scaled balance controller keeps the bike upright
+ *   and leans it toward a steering target.
+ * - M8 — dynamic lean: the target lean is derived from the cornering demand.
+ * - M9 — countersteering: yaw follows the actual lean.
+ * - M10 — bounded tyre grip: wheel-spin state, longitudinal slip ratio + slip
+ *   angle, linear tyre forces clamped to a friction ellipse per wheel, so
+ *   braking and cornering share one grip budget and wheelspin / lock can emerge.
+ *   Weight transfer (M11) still to come.
  */
 interface WheelGeometry {
 	/** Strut-top attachment in the body frame: on the axle line, at CG height. */
@@ -108,6 +123,14 @@ export class Motorcycle {
 	private readonly balanceController: BalanceController;
 	private readonly steeringController: SteeringController;
 	private readonly riderSteering: RiderSteeringProfile;
+	private readonly tires: MotorcycleConfig['chassis']['tires'];
+
+	/** Wheel angular speeds — real state from M10 (MOTORCYCLE-PHYSICS.md §36). */
+	private frontWheelOmegaRadS = 0;
+	private rearWheelOmegaRadS = 0;
+	/** Relaxed longitudinal tyre force per wheel (first-order lag, §35) — for stability. */
+	private frontFxN = 0;
+	private rearFxN = 0;
 
 	private environment: MotorcycleEnvironment = {
 		gradeFraction: 0,
@@ -144,7 +167,8 @@ export class Motorcycle {
 			config.powertrain.torqueCurve,
 			config.physical.inertia.engineKgM2
 		);
-		this.drivetrain = new Drivetrain(config.powertrain, geo);
+		this.drivetrain = new Drivetrain(config.powertrain);
+		this.tires = config.chassis.tires;
 		this.balanceController = new BalanceController(
 			rider.balance,
 			this.massKg * GRAVITY_MPS2 * geo.cgHeightM
@@ -205,11 +229,14 @@ export class Motorcycle {
 		const speedAlong = dot(this.state.linearVelocityWorldMps, forwardHoriz);
 		this.state.forwardSpeedMps = speedAlong;
 
-		// Powertrain: engine ← clutch/gearbox load ← rear wheel (locked to ground
-		// speed until M10). The drivetrain also returns the rear-contact drive
-		// force (positive) or engine-braking force (negative).
+		// Powertrain: engine ← clutch/gearbox load ← rear wheel (real angular
+		// state). The drivetrain returns the torque delivered to the rear wheel.
 		this.drivetrain.update(dtS);
-		const drive = this.drivetrain.solve(this.engine.omegaRadS, speedAlong, this.state.clutch);
+		const drive = this.drivetrain.solve(
+			this.engine.omegaRadS,
+			this.rearWheelOmegaRadS,
+			this.state.clutch
+		);
 		const throttleForEngine = this.drivetrain.gearbox.torqueCutActive ? 0 : this.state.throttle;
 		this.engine.update(dtS, throttleForEngine, drive.engineLoadTorqueNm);
 
@@ -219,15 +246,15 @@ export class Motorcycle {
 			this.engine.lastCombustionTorqueNm - this.engine.lastFrictionTorqueNm;
 		this.state.gear = this.drivetrain.gearbox.gear;
 		this.state.engineStalled = this.engine.stalled;
-		this.state.rearWheelOmegaRadS = drive.rearWheelOmegaRadS;
-		this.state.frontWheelOmegaRadS = speedAlong / this.geometry.frontWheelRadiusM;
-		this.state.driveForceN = drive.driveForceN;
 
 		this.frontCompressionM = this.updateWheel('front', this.front, dtS);
 		this.rearCompressionM = this.updateWheel('rear', this.rear, dtS);
 
-		this.applyLongitudinalForces(forwardHoriz, speedAlong, drive.driveForceN);
+		// Rider control first — it sets the steering angle and the cornering
+		// (lateral) demand that the tyre model then realises within the grip limit.
 		this.applyRiderControl(speedAlong, dtS);
+		this.applyTireForces(forwardHoriz, drive.rearWheelTorqueNm, dtS);
+		this.applyResistanceForces(forwardHoriz, speedAlong);
 	}
 
 	private forwardHorizontal(): Vec3 {
@@ -236,21 +263,13 @@ export class Motorcycle {
 	}
 
 	/**
-	 * Net longitudinal force along the (horizontal) heading, applied at the CG:
-	 *
-	 *   F_net = F_drive − F_brake − F_drag − F_rolling − F_grade
-	 *          (MOTORCYCLE-PHYSICS.md §13)
-	 *
-	 * `driveForceN` comes from the drivetrain (positive under power, negative on
-	 * the overrun = engine braking). Speed emerges from Rapier integrating this
-	 * force — nothing assigns velocity. Contact-patch application (squat / dive)
-	 * and grip limiting are deferred to M11 / M10.
+	 * Resistive body forces along the heading (MOTORCYCLE-PHYSICS.md §10–13):
+	 * aerodynamic drag, rolling resistance and the road-gradient component,
+	 * applied at the CG. Drive and brake forces are no longer here — from M10
+	 * they reach the ground through the tyre model as grip-limited contact
+	 * forces.
 	 */
-	private applyLongitudinalForces(
-		forwardHoriz: Vec3,
-		speedAlong: number,
-		driveForceN: number
-	): void {
+	private applyResistanceForces(forwardHoriz: Vec3, speedAlong: number): void {
 		const grade = gradientForces(this.massKg, this.environment.gradeFraction);
 		this.state.roadGradientRad = grade.angleRad;
 
@@ -262,17 +281,173 @@ export class Motorcycle {
 		const rollingN = moving
 			? rollingResistanceForceN(normalLoadN, this.environment.surface.rollingResistance)
 			: 0;
-		const braking = brakeForcesN(
-			this.state.frontBrake,
-			this.state.rearBrake,
-			this.brakeConfig,
-			this.geometry
-		);
-		const brakeN = moving ? braking.totalN : 0;
 
-		const netForwardN = driveForceN - travelSign * (dragN + rollingN + brakeN) - grade.alongSlopeN;
-
+		const netForwardN = -travelSign * (dragN + rollingN) - grade.alongSlopeN;
 		this.rig.addForceAtPointWorld(scale(forwardHoriz, netForwardN), this.state.positionWorldM);
+	}
+
+	/**
+	 * Grip-limited tyre contact forces (MOTORCYCLE-PHYSICS.md §29–36).
+	 *
+	 * For each wheel: normal load from the suspension, contact-patch velocity →
+	 * slip ratio and slip angle, linear tyre forces (F_x = C_κ·κ,
+	 * F_y = −C_α·α + cornering demand), clamped to the friction ellipse for that
+	 * wheel's load. The clamped force is applied at the contact; its reaction
+	 * drives the wheel's angular acceleration together with drive / brake torque
+	 * (§36), so wheelspin and lock emerge.
+	 */
+	private applyTireForces(forwardHoriz: Vec3, rearWheelTorqueNm: number, dtS: number): void {
+		const rightHoriz = normalize(cross(forwardHoriz, UP_WORLD));
+		const surface = this.environment.surface;
+
+		// Cornering (lateral) demand: the centripetal force the bike is actually
+		// experiencing for its current yaw rate, F_y = m·v·ψ̇ (toward the turn
+		// centre), plus light sideslip damping. The yaw itself is produced by the
+		// rider steering model (applyRiderControl); this force curves the CG's
+		// path to match. Split by axle load and passed through the grip-limited
+		// tyre model — so hard braking (which consumes F_x budget) leaves less
+		// cornering force, per the friction ellipse (§30). A camber-thrust model
+		// replacing the yaw-led mechanism is a later refinement (§31).
+		const cgLateralSpeed = dot(this.state.linearVelocityWorldMps, rightHoriz);
+		const centripetalN = -this.massKg * this.state.forwardSpeedMps * this.state.yawRateRadS;
+		const slipDampN = (-this.massKg * cgLateralSpeed) / 0.4;
+		const lateralDemandTotalN = centripetalN + slipDampN;
+
+		const totalLoadN = Math.max(this.state.frontNormalLoadN + this.state.rearNormalLoadN, 1);
+		const geo = this.geometry;
+		let corneringForceN = 0; // summed lateral tyre force, applied on the contact line
+
+		const solveWheel = (which: 'front' | 'rear') => {
+			const isFront = which === 'front';
+			const contact = isFront ? this.debug.frontContactWorldM : this.debug.rearContactWorldM;
+			const radiusM = isFront ? geo.frontWheelRadiusM : geo.rearWheelRadiusM;
+			const inertiaKgM2 = isFront
+				? this.config.physical.inertia.frontWheelKgM2
+				: this.config.physical.inertia.rearWheelKgM2;
+			const normalLoadN = isFront ? this.state.frontNormalLoadN : this.state.rearNormalLoadN;
+			const grounded = isFront ? this.state.frontContactGround : this.state.rearContactGround;
+			let omega = isFront ? this.frontWheelOmegaRadS : this.rearWheelOmegaRadS;
+
+			const contactVel = this.rig.pointVelocityWorld(contact);
+			const vx = dot(contactVel, forwardHoriz);
+			const vy = dot(contactVel, rightHoriz);
+
+			if (!grounded || normalLoadN <= 0) {
+				// Airborne: no contact force; spin decays toward the free speed.
+				const targetOmega = vx / radiusM;
+				omega += (targetOmega - omega) * Math.min(1, dtS * 4);
+				this.writeWheelState(which, omega, 0, 0, 0);
+				return;
+			}
+
+			const kappa = slipRatio(omega, radiusM, vx);
+			const steerAngleRad = isFront ? this.state.steeringAngleRad : 0;
+			const alpha = slipAngleRad(vy, vx, steerAngleRad); // telemetry only in M10
+			const lateralDemandShareN = lateralDemandTotalN * (normalLoadN / totalLoadN);
+
+			// Longitudinal demand from slip ratio (§34), with the linear region
+			// capped to reach the grip limit at a realistic slip (§12 stiffness is
+			// an upper bound). κ used for force is bounded — past ~1.5 the force is
+			// saturated anyway and unbounded κ just makes the demand ratio silly.
+			const xMax = surface.muLongitudinal * normalLoadN;
+			const kappaStiffnessN = Math.min(
+				isFront ? this.tires.frontLongitudinalStiffnessN : this.tires.rearLongitudinalStiffnessN,
+				xMax / 0.12
+			);
+			// Below walking pace, taper the braking demand so a locked wheel cannot
+			// push the bike backwards.
+			const brakeSpeedGate = Math.min(1, Math.abs(vx) / 0.6);
+			const kappaForce = clamp(kappa, -1.5, 1.5) * (kappa < 0 ? brakeSpeedGate : 1);
+			const fxDemandN = kappaStiffnessN * kappaForce;
+
+			// One grip budget shared between F_x and the cornering demand (§30).
+			const grip = clampToFrictionEllipse(
+				fxDemandN,
+				lateralDemandShareN,
+				surface.muLongitudinal,
+				surface.muLateral,
+				normalLoadN
+			);
+
+			// First-order relaxation on F_x (§35) — the κ → F_x → ω → κ loop is
+			// numerically stiff at 120 Hz; the tyre force lags its target rather
+			// than snapping to it.
+			const relax = Math.min(1, dtS / this.tires.relaxationTimeS);
+			let fxN = isFront ? this.frontFxN : this.rearFxN;
+			fxN += (grip.fxN - fxN) * relax;
+			if (isFront) this.frontFxN = fxN;
+			else this.rearFxN = fxN;
+
+			// Longitudinal force applied at CG height (same x/z as the contact so
+			// the tiny yaw effect of an off-centre wheel is kept). Applying it at
+			// the ground would pitch the bike forward under braking — that
+			// dive/squat and the resulting load shift is M11's job (§27). Lateral
+			// force is accumulated and applied on the contact line (no yaw moment).
+			const fxPoint = { x: contact.x, y: this.state.positionWorldM.y, z: contact.z };
+			this.rig.addForceAtPointWorld(scale(forwardHoriz, fxN), fxPoint);
+			corneringForceN += grip.fyN;
+			if (!isFront) this.lastRearFxN = fxN;
+
+			// Wheel angular dynamics: I_w·dω/dt = T_drive − T_brake·sign(ω) − F_x·r  (§36)
+			const driveNm = isFront ? 0 : rearWheelTorqueNm;
+			const brakeCapNm =
+				(isFront ? this.state.frontBrake : this.state.rearBrake) *
+				(isFront ? this.brakeConfig.frontMaxTorqueNm : this.brakeConfig.rearMaxTorqueNm);
+			const omegaBeforeBrake = omega + ((driveNm - fxN * radiusM) / inertiaKgM2) * dtS;
+			// Brake opposes rotation but cannot drive ω through zero (that is lock).
+			const brakeDeltaOmega = (brakeCapNm / inertiaKgM2) * dtS;
+			omega =
+				omegaBeforeBrake > 0
+					? Math.max(0, omegaBeforeBrake - brakeDeltaOmega)
+					: Math.min(0, omegaBeforeBrake + brakeDeltaOmega);
+
+			// A wheel with no drive or brake torque is forced by the tyre to roll
+			// freely — relax ω toward v_x/r on a short time constant. This also
+			// absorbs a respawn / velocity set without a spurious slip transient.
+			if (driveNm === 0 && brakeCapNm < 1) {
+				omega += (vx / radiusM - omega) * Math.min(1, dtS / 0.05);
+			}
+
+			this.writeWheelState(which, omega, kappa, alpha, grip.utilization);
+		};
+
+		solveWheel('front');
+		solveWheel('rear');
+
+		const contactMid = scale(add(this.debug.frontContactWorldM, this.debug.rearContactWorldM), 0.5);
+		this.rig.addForceAtPointWorld(scale(rightHoriz, corneringForceN), contactMid);
+		this.state.driveForceN = this.lastRearFxN;
+	}
+
+	private lastRearFxN = 0;
+
+	private writeWheelState(
+		which: 'front' | 'rear',
+		omegaRadS: number,
+		slipRatioValue: number,
+		slipAngleValue: number,
+		gripUtilization: number
+	): void {
+		if (which === 'front') {
+			this.frontWheelOmegaRadS = omegaRadS;
+			this.state.frontWheelOmegaRadS = omegaRadS;
+			this.state.frontSlipRatio = slipRatioValue;
+			this.state.frontSlipAngleRad = slipAngleValue;
+			this.state.frontGripUtilization = gripUtilization;
+		} else {
+			this.rearWheelOmegaRadS = omegaRadS;
+			this.state.rearWheelOmegaRadS = omegaRadS;
+			this.state.rearSlipRatio = slipRatioValue;
+			this.state.rearSlipAngleRad = slipAngleValue;
+			this.state.rearGripUtilization = gripUtilization;
+		}
+	}
+
+	/** Match the wheel angular speeds to the current ground speed (after a respawn / velocity set). */
+	resyncWheelsToGround(): void {
+		const v = dot(this.rig.getPose().linearVelocityWorldMps, this.forwardHorizontal());
+		this.frontWheelOmegaRadS = v / this.geometry.frontWheelRadiusM;
+		this.rearWheelOmegaRadS = v / this.geometry.rearWheelRadiusM;
 	}
 
 	private updateWheel(which: 'front' | 'rear', wheel: WheelGeometry, dtS: number): number {
@@ -388,41 +563,8 @@ export class Motorcycle {
 			1200
 		);
 		this.rig.addTorqueWorld(scale(UP_WORLD, yawTorqueNm));
-
-		this.applyProvisionalCorneringForce(forwardWorld, yawRateRadS, speedMps);
-	}
-
-	/**
-	 * TEMP until M10 (tyre forces). With no slip-angle tyre model there is nothing
-	 * to curve the CG's path when the chassis yaws, so the bike would just slide.
-	 * This adds the centripetal force that makes the CG follow the arc the heading
-	 * sweeps, plus lateral-slip damping so it tracks rather than scrubs. M10
-	 * replaces this with real lateral tyre forces from slip angle.
-	 */
-	private applyProvisionalCorneringForce(
-		forwardWorld: Vec3,
-		yawRateRadS: number,
-		speedMps: number
-	): void {
-		const forwardHoriz = normalize({ x: forwardWorld.x, y: 0, z: forwardWorld.z });
-		const rightHoriz = normalize(cross(forwardHoriz, UP_WORLD)); // right-hand: forward × up
-		const lateralSpeed = dot(this.state.linearVelocityWorldMps, rightHoriz);
-
-		// Centripetal: yawing left (yawRate > 0 about +y) curves the path left,
-		// so the required force points left = −right.
-		const centripetalN = -this.massKg * speedMps * yawRateRadS;
-		const slipDampN = (-this.massKg * lateralSpeed) / 0.3;
-
-		// Apply at the contact line (midway between the wheel contact points), like
-		// a tyre force — on the roll axis, so it curves the path without adding a
-		// roll moment. Lean equilibrium is then set by gravity vs the balance
-		// controller, so the bike settles near φ_target rather than lying down.
-		const contactMid: Vec3 = {
-			x: (this.debug.frontContactWorldM.x + this.debug.rearContactWorldM.x) / 2,
-			y: (this.debug.frontContactWorldM.y + this.debug.rearContactWorldM.y) / 2,
-			z: (this.debug.frontContactWorldM.z + this.debug.rearContactWorldM.z) / 2
-		};
-		this.rig.addForceAtPointWorld(scale(rightHoriz, centripetalN + slipDampN), contactMid);
+		// The lateral cornering force is now produced by the tyre model
+		// (applyTireForces), grip-limited by the friction ellipse.
 	}
 
 	private syncPose(): void {
