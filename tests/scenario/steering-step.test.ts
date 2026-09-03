@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMotorcycleRig } from '$lib/simulation/physics/createMotorcycleRig';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
+import { ASSISTS_OFF } from '$lib/simulation/assists/AssistConfig';
 import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 
 const RENDER_FRAME_S = 1 / 60;
@@ -23,7 +24,7 @@ interface Sample {
 
 /** §75 steering-step test: constant speed, step the steering intention 0 → +0.5. */
 async function steeringStep() {
-	const rig = await createMotorcycleRig(ADVENTURE_1200);
+	const rig = await createMotorcycleRig(ADVENTURE_1200, { assists: ASSISTS_OFF });
 	const loop = new SimulationLoop({ fixedDtS: 1 / 120 });
 	for (let t = 0; t < 1.2; t += RENDER_FRAME_S) {
 		loop.advance(RENDER_FRAME_S, (dt) => {

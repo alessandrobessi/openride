@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMotorcycleRig } from '$lib/simulation/physics/createMotorcycleRig';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
+import { ASSISTS_OFF } from '$lib/simulation/assists/AssistConfig';
 import { DRY_ASPHALT } from '$lib/simulation/world/surface';
 import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 
@@ -26,7 +27,7 @@ interface RunOptions {
 
 /** Run a longitudinal scenario and return a speed sample at start and end of the measured window. */
 async function run(opts: RunOptions) {
-	const rig = await createMotorcycleRig(ADVENTURE_1200);
+	const rig = await createMotorcycleRig(ADVENTURE_1200, { assists: ASSISTS_OFF });
 	const loop = new SimulationLoop({ fixedDtS: 1 / 120 });
 	const controls = { ...NEUTRAL, ...opts.controls };
 	rig.motorcycle.setEnvironment({

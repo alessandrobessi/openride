@@ -2,6 +2,7 @@ import type { MotorcycleConfig } from '../motorcycle/config';
 import { Motorcycle } from '../motorcycle/Motorcycle';
 import type { RiderProfile } from '../rider/RiderProfile';
 import { DEFAULT_RIDER } from '../rider/profiles/default-rider';
+import type { AssistConfig } from '../assists/AssistConfig';
 import { RapierChassisRig } from './RapierChassisRig';
 import { RapierWorld } from './RapierWorld';
 
@@ -23,6 +24,8 @@ export interface CreateMotorcycleRigOptions {
 	withGround?: boolean;
 	/** Virtual rider profile. Default: the simulation rider. */
 	rider?: RiderProfile;
+	/** Assist configuration. Default: all safety assists on. */
+	assists?: AssistConfig;
 }
 
 // Rough bike-sized cuboid for future terrain/crash collision. Sensor-only in M3.
@@ -49,6 +52,6 @@ export async function createMotorcycleRig(
 	});
 
 	const rig = new RapierChassisRig(world, chassisHandle);
-	const motorcycle = new Motorcycle(rig, config, options.rider ?? DEFAULT_RIDER);
+	const motorcycle = new Motorcycle(rig, config, options.rider ?? DEFAULT_RIDER, options.assists);
 	return { world, motorcycle, chassisHandle };
 }

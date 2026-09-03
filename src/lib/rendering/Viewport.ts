@@ -37,6 +37,10 @@ export interface ViewportStats {
 	rearLoadN: number;
 	frontGrip: number;
 	rearGrip: number;
+	absActive: boolean;
+	tcActive: boolean;
+	absOn: boolean;
+	tcOn: boolean;
 }
 
 const FIXED_DT_S = 1 / 120;
@@ -119,6 +123,11 @@ export class Viewport {
 
 	restartEngine(): void {
 		this.rig?.motorcycle.restartEngine();
+	}
+
+	toggleAssist(assist: 'abs' | 'tractionControl' | 'wheelieControl'): void {
+		const m = this.rig?.motorcycle;
+		if (m) m.setAssistEnabled(assist, !m.isAssistEnabled(assist));
 	}
 
 	/** Build the physics world + motorcycle rig and begin rendering. */
@@ -261,7 +270,11 @@ export class Viewport {
 				frontLoadN: this.rig?.motorcycle.state.frontNormalLoadN ?? 0,
 				rearLoadN: this.rig?.motorcycle.state.rearNormalLoadN ?? 0,
 				frontGrip: this.rig?.motorcycle.state.frontGripUtilization ?? 0,
-				rearGrip: this.rig?.motorcycle.state.rearGripUtilization ?? 0
+				rearGrip: this.rig?.motorcycle.state.rearGripUtilization ?? 0,
+				absActive: this.rig?.motorcycle.state.absActive ?? false,
+				tcActive: this.rig?.motorcycle.state.tractionControlActive ?? false,
+				absOn: this.rig?.motorcycle.isAssistEnabled('abs') ?? true,
+				tcOn: this.rig?.motorcycle.isAssistEnabled('tractionControl') ?? true
 			});
 		}
 	}

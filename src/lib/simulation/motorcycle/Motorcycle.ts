@@ -20,6 +20,10 @@ import { BalanceController } from '../rider/BalanceController';
 import { SteeringController } from '../rider/SteeringController';
 import { countersteer } from '../rider/countersteer';
 import type { RiderProfile, RiderSteeringProfile } from '../rider/RiderProfile';
+import { Abs } from '../assists/abs';
+import { TractionControl } from '../assists/tractionControl';
+import { WheelieControl } from '../assists/wheelieControl';
+import { DEFAULT_ASSISTS, type AssistConfig } from '../assists/AssistConfig';
 import { GRAVITY_MPS2 } from '../core/constants';
 import { gradientForces } from '../world/gradient';
 import { DRY_ASPHALT, type SurfacePhysics } from '../world/surface';
@@ -71,7 +75,11 @@ export interface MotorcycleEnvironment {
  * - M10 — bounded tyre grip: wheel-spin state, longitudinal slip ratio + slip
  *   angle, linear tyre forces clamped to a friction ellipse per wheel, so
  *   braking and cornering share one grip budget and wheelspin / lock can emerge.
- *   Weight transfer (M11) still to come.
+ * - M11 — longitudinal weight transfer via a bounded pitch response; the
+ *   suspension then redistributes axle load.
+ * - M12 — configurable assists: ABS modulates brake torque, traction control
+ *   trims the throttle, wheelie control cuts drive torque — independent, acting
+ *   on torque only.
  */
 interface WheelGeometry {
 	/** Strut-top attachment in the body frame: on the axle line, at CG height. */
@@ -124,6 +132,11 @@ export class Motorcycle {
 	private readonly steeringController: SteeringController;
 	private readonly riderSteering: RiderSteeringProfile;
 	private readonly tires: MotorcycleConfig['chassis']['tires'];
+	private readonly assists: AssistConfig;
+	private readonly absFront: Abs;
+	private readonly absRear: Abs;
+	private readonly tractionControl: TractionControl;
+	private readonly wheelieControl: WheelieControl;
 
 	/** Wheel angular speeds — real state from M10 (MOTORCYCLE-PHYSICS.md §36). */
 	private frontWheelOmegaRadS = 0;
@@ -153,7 +166,12 @@ export class Motorcycle {
 		return config.physical.geometry.cgHeightM + 0.05;
 	}
 
-	constructor(rig: ChassisRig, config: MotorcycleConfig, rider: RiderProfile) {
+	constructor(
+		rig: ChassisRig,
+		config: MotorcycleConfig,
+		rider: RiderProfile,
+		assists: AssistConfig = DEFAULT_ASSISTS
+	) {
 		this.rig = rig;
 		this.config = config;
 		this.state = createMotorcycleState();
@@ -177,6 +195,12 @@ export class Motorcycle {
 		);
 		this.steeringController = new SteeringController(rider, geo.wheelbaseM, geo.maxLeanAngleRad);
 		this.riderSteering = rider.steering;
+
+		this.assists = { ...assists };
+		this.absFront = new Abs(this.assists.abs);
+		this.absRear = new Abs(this.assists.abs);
+		this.tractionControl = new TractionControl(this.assists.tractionControl);
+		this.wheelieControl = new WheelieControl(this.assists.wheelieControl);
 
 		this.zeroCompressionReachM = geo.cgHeightM;
 		this.front = {
@@ -214,6 +238,15 @@ export class Motorcycle {
 		this.drivetrain.gearbox.selectGear(gear);
 	}
 
+	/** Toggle an assist at runtime (BLUEPRINT §21). */
+	setAssistEnabled(assist: keyof AssistConfig, enabled: boolean): void {
+		this.assists[assist].enabled = enabled;
+	}
+
+	isAssistEnabled(assist: keyof AssistConfig): boolean {
+		return this.assists[assist].enabled;
+	}
+
 	/** Crank a stalled engine back to life (BLUEPRINT §27 "R"). */
 	restartEngine(): void {
 		this.engine.restart();
@@ -243,7 +276,11 @@ export class Motorcycle {
 			this.rearWheelOmegaRadS,
 			this.state.clutch
 		);
-		const throttleForEngine = this.drivetrain.gearbox.torqueCutActive ? 0 : this.state.throttle;
+		// Traction control trims the throttle request when the rear is spinning
+		// (using last step's slip). Acts on torque, not speed (§57).
+		const tcThrottle = this.tractionControl.limit(this.state.throttle, this.state.rearSlipRatio);
+		this.state.tractionControlActive = this.tractionControl.active;
+		const throttleForEngine = this.drivetrain.gearbox.torqueCutActive ? 0 : tcThrottle;
 		this.engine.update(dtS, throttleForEngine, drive.engineLoadTorqueNm);
 
 		this.state.engineOmegaRadS = this.engine.omegaRadS;
@@ -257,11 +294,19 @@ export class Motorcycle {
 		this.rearCompressionM = this.updateWheel('rear', this.rear, dtS);
 		this.applyPitchResponse();
 
+		// Wheelie control cuts drive torque as the front unloads (§58).
+		const frontLoadFraction =
+			this.state.frontNormalLoadN /
+			Math.max(this.state.frontNormalLoadN + this.state.rearNormalLoadN, 1);
+		const rearWheelTorqueNm = this.wheelieControl.limit(drive.rearWheelTorqueNm, frontLoadFraction);
+		this.state.wheelieControlActive = this.wheelieControl.active;
+
 		// Rider control first — it sets the steering angle and the cornering
 		// (lateral) demand that the tyre model then realises within the grip limit.
 		this.applyRiderControl(speedAlong, dtS);
-		this.applyTireForces(forwardHoriz, drive.rearWheelTorqueNm, dtS);
+		this.applyTireForces(forwardHoriz, rearWheelTorqueNm, dtS);
 		this.applyResistanceForces(forwardHoriz, speedAlong);
+		this.state.absActive = this.absFront.active || this.absRear.active;
 	}
 
 	private forwardHorizontal(): Vec3 {
@@ -426,8 +471,12 @@ export class Motorcycle {
 
 			// Wheel angular dynamics: I_w·dω/dt = T_drive − T_brake·sign(ω) − F_x·r  (§36)
 			const driveNm = isFront ? 0 : rearWheelTorqueNm;
+			// ABS modulates the commanded brake toward a target braking slip (§56).
+			const brakeInput = isFront ? this.state.frontBrake : this.state.rearBrake;
+			const abs = isFront ? this.absFront : this.absRear;
+			const effectiveBrake = abs.modulate(brakeInput, kappa, dtS);
 			const brakeCapNm =
-				(isFront ? this.state.frontBrake : this.state.rearBrake) *
+				effectiveBrake *
 				(isFront ? this.brakeConfig.frontMaxTorqueNm : this.brakeConfig.rearMaxTorqueNm);
 			const omegaBeforeBrake = omega + ((driveNm - fxN * radiusM) / inertiaKgM2) * dtS;
 			// Brake opposes rotation but cannot drive ω through zero (that is lock).

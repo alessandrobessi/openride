@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMotorcycleRig } from '$lib/simulation/physics/createMotorcycleRig';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
+import { ASSISTS_OFF } from '$lib/simulation/assists/AssistConfig';
 import { DRY_ASPHALT } from '$lib/simulation/world/surface';
 import type { Motorcycle, MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 
@@ -16,7 +17,7 @@ const NEUTRAL: MotorcycleControls = {
 const G = 9.80665;
 
 async function makeRig() {
-	const rig = await createMotorcycleRig(ADVENTURE_1200);
+	const rig = await createMotorcycleRig(ADVENTURE_1200, { assists: ASSISTS_OFF });
 	rig.motorcycle.setEnvironment({ gradeFraction: 0, surface: DRY_ASPHALT });
 	const loop = new SimulationLoop({ fixedDtS: 1 / 120 });
 	const step = (seconds: number, drive: (m: Motorcycle, t: number) => void) => {

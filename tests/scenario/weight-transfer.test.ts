@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMotorcycleRig } from '$lib/simulation/physics/createMotorcycleRig';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
+import { ASSISTS_OFF } from '$lib/simulation/assists/AssistConfig';
 import { staticAxleLoadsN } from '$lib/simulation/motorcycle/axleLoads';
 import type { Motorcycle, MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 
@@ -23,7 +24,7 @@ async function run(opts: {
 	durationS: number;
 	control: (m: Motorcycle, t: number) => Partial<MotorcycleControls>;
 }) {
-	const rig = await createMotorcycleRig(ADVENTURE_1200);
+	const rig = await createMotorcycleRig(ADVENTURE_1200, { assists: ASSISTS_OFF });
 	const loop = new SimulationLoop({ fixedDtS: 1 / 120 });
 	for (let t = 0; t < 1.5; t += RENDER_FRAME_S) {
 		loop.advance(RENDER_FRAME_S, (dt) => {

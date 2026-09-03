@@ -68,6 +68,11 @@ export interface MotorcycleState {
 	/** Grip utilisation U = √(Fx²+Fy²)/(µ·Fz); ≥ 1 means saturated (§84). */
 	frontGripUtilization: number;
 	rearGripUtilization: number;
+
+	// --- assists (M12) ---
+	absActive: boolean;
+	tractionControlActive: boolean;
+	wheelieControlActive: boolean;
 }
 
 export function createMotorcycleState(): MotorcycleState {
@@ -114,6 +119,10 @@ export function createMotorcycleState(): MotorcycleState {
 		frontSlipAngleRad: 0,
 		rearSlipAngleRad: 0,
 		frontGripUtilization: 0,
-		rearGripUtilization: 0
+		rearGripUtilization: 0,
+
+		absActive: false,
+		tractionControlActive: false,
+		wheelieControlActive: false
 	};
 }

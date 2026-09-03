@@ -17,7 +17,11 @@
 		frontLoadN: 0,
 		rearLoadN: 0,
 		frontGrip: 0,
-		rearGrip: 0
+		rearGrip: 0,
+		absActive: false,
+		tcActive: false,
+		absOn: true,
+		tcOn: true
 	});
 	let frames = $state(0);
 
@@ -48,6 +52,9 @@
 				if (k === 'e') viewport.shiftUp();
 				else if (k === 'q') viewport.shiftDown();
 				else if (k === 'r') viewport.restartEngine();
+				else if (k === '1') viewport.toggleAssist('abs');
+				else if (k === '2') viewport.toggleAssist('tractionControl');
+				else if (k === '3') viewport.toggleAssist('wheelieControl');
 			}
 			held.add(k);
 			applyAnalog();
@@ -86,9 +93,12 @@
 		<span
 			>grip {Math.min(stats.frontGrip, 2).toFixed(2)}/{Math.min(stats.rearGrip, 2).toFixed(2)}</span
 		>
+		<span class:muted={!stats.absOn} class:live={stats.absActive}>ABS</span>
+		<span class:muted={!stats.tcOn} class:live={stats.tcActive}>TC</span>
 	</div>
 	<div class="help">
-		W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart
+		W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart · 1/2/3
+		ABS/TC/wheelie
 	</div>
 </div>
 
@@ -129,6 +139,15 @@
 	}
 
 	.warn {
+		color: #ffb454;
+		font-weight: 700;
+	}
+
+	.muted {
+		opacity: 0.3;
+	}
+
+	.live {
 		color: #ffb454;
 		font-weight: 700;
 	}
