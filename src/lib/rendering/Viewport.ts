@@ -275,7 +275,6 @@ export class Viewport {
 				spawn: manifest.spawn
 			});
 			this.addRoadSurface(road);
-			await this.loadEnvironment(worldDir, manifest);
 		} else {
 			rig = await createMotorcycleRig(ADVENTURE_1200);
 		}
@@ -296,6 +295,10 @@ export class Viewport {
 		}
 
 		this.loop.start();
+
+		// Static scenery is decorative — stream it in after the loop is live so
+		// first paint isn't blocked on parsing / instancing thousands of props.
+		if (manifest && road) void this.loadEnvironment(worldDir, manifest);
 	}
 
 	/** Load and instance the static scenery package (M25–M28). Non-critical. */

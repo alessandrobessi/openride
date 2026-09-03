@@ -13,8 +13,11 @@ test('ride test stage renders a live WebGL viewport', async ({ page }) => {
 	await expect(canvas).toBeVisible();
 
 	// The render loop must actually be running: the frame counter advances.
+	// Generous timeout — CI runs software GL and the world takes a moment to boot.
 	const stats = page.getByTestId('render-stats');
-	await expect.poll(() => stats.getAttribute('data-frames').then(Number)).toBeGreaterThan(5);
+	await expect
+		.poll(() => stats.getAttribute('data-frames').then(Number), { timeout: 20_000 })
+		.toBeGreaterThan(5);
 
 	expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
