@@ -50,8 +50,16 @@ before the next begins. Do not implement a later milestone early (`AGENTS.md`
 | M23 | Procedural engine audio | `feat: add procedural engine audio`                   |
 | M24 | Wind + road audio       | `feat: add dynamic wind and road audio`               |
 
-## Out of scope for v0.1
+## Phase 5 — Visual world (BLUEPRINT §34)
 
-M25–M28 (road furniture, vegetation, buildings, sky polish), weather / wet grip,
-route selection, and everything in `AGENTS.md` §36. WebGPU stays a future
-experiment.
+| ID  | Milestone                       | Commit                                                  |
+| --- | ------------------------------- | ------------------------------------------------------- |
+| M25 | Road furniture                  | `feat: add road furniture (guardrails and delineators)` |
+| M26 | Procedural vegetation           | `feat: add procedural vegetation`                       |
+| M27 | Extruded OSM buildings          | `feat: add extruded OSM buildings`                      |
+| M28 | Sky, sun + atmospheric lighting | `feat: add sky, sun and atmospheric lighting`           |
+
+## Out of scope
+
+Weather / wet grip (BLUEPRINT §35), route selection (§36), and everything in
+`AGENTS.md` §36. WebGPU stays a future experiment.
