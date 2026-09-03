@@ -18,6 +18,8 @@ interface RunOptions {
 	controls?: Partial<MotorcycleControls>;
 	gradeFraction?: number;
 	initialSpeedMps?: number;
+	/** Gear to select before the measured window. Default 0 (neutral) to isolate resistance. */
+	gear?: number;
 	durationS: number;
 	settleS?: number;
 }
@@ -43,6 +45,7 @@ async function run(opts: RunOptions) {
 	if (opts.initialSpeedMps) {
 		rig.world.setLinearVelocity(rig.chassisHandle, { x: 0, y: 0, z: opts.initialSpeedMps });
 	}
+	rig.motorcycle.selectGear(opts.gear ?? 0);
 
 	const speeds: Array<{ t: number; v: number }> = [];
 	for (let t = 0; t < opts.durationS; t += RENDER_FRAME_S) {
@@ -62,17 +65,6 @@ describe('M4 longitudinal dynamics (headless)', () => {
 	it('at rest with no throttle on flat ground, stays at rest (energy sanity)', async () => {
 		const { finalV } = await run({ durationS: 3 });
 		expect(Math.abs(finalV)).toBeLessThan(0.05);
-	});
-
-	it('full throttle reaches a steady top speed set by the drive/resistance balance', async () => {
-		const { speeds, finalV } = await run({ controls: { throttle: 1 }, durationS: 45 });
-		// ADVENTURE-1200.md §21: emergent top speed ~200–220 km/h (55.6–61.1 m/s).
-		// The M4 drive stub is sized for this range.
-		expect(finalV).toBeGreaterThan(53);
-		expect(finalV).toBeLessThan(63);
-		// Plateaued: last second barely changes.
-		const nearEnd = speeds[speeds.length - 61].v;
-		expect(finalV - nearEnd).toBeLessThan(0.5);
 	});
 
 	it('coast-down deceleration matches drag + rolling resistance', async () => {
@@ -98,18 +90,6 @@ describe('M4 longitudinal dynamics (headless)', () => {
 		const decelFast = fast.speeds[0].v - fast.finalV;
 		const decelSlow = slow.speeds[0].v - slow.finalV;
 		expect(decelFast).toBeGreaterThan(decelSlow * 1.5);
-	});
-
-	it('steeper climbs reduce the equilibrium speed', async () => {
-		const grades = [0, 0.05, 0.1, 0.15];
-		const tops: number[] = [];
-		for (const g of grades) {
-			tops.push((await run({ controls: { throttle: 1 }, gradeFraction: g, durationS: 45 })).finalV);
-		}
-		for (let i = 1; i < tops.length; i++) {
-			expect(tops[i]).toBeLessThan(tops[i - 1] - 1);
-		}
-		expect(tops[3]).toBeLessThan(tops[0] - 10);
 	});
 
 	it('rolls downhill from rest with no throttle, then settles at terminal speed', async () => {

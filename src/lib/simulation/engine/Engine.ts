@@ -15,7 +15,9 @@ import { interpolateTorqueNm, omegaFromRpm, rpmFromOmega } from './torqueCurve';
  *   engine is still decoupled (as in neutral); the clutch couples it in M6.
  *
  * An idle governor keeps the engine alive near `idleRPM` when the throttle is
- * closed. Stalling (§23) needs a clutch load and arrives with M6.
+ * closed. When a clutch load drags the speed below the stall threshold and
+ * combustion cannot recover it (§23), the engine stalls: combustion goes to
+ * zero until {@link restart}.
  *
  * Pure — integrates its own scalar state with semi-implicit Euler; no Rapier.
  */
@@ -28,11 +30,16 @@ export class Engine {
 	lastCombustionTorqueNm = 0;
 	/** Net friction + engine-braking torque last step, N·m, positive = opposing. */
 	lastFrictionTorqueNm = 0;
+	/** True once the engine has been dragged down and killed (§23). */
+	stalled = false;
 
 	private readonly config: EngineConfig;
 	private readonly curve: readonly TorquePoint[];
 	private readonly inertiaKgM2: number;
 	private readonly minOmegaRadS: number;
+	private readonly stallOmegaRadS: number;
+	/** How long the engine has been lugging below the stall threshold under load. */
+	private belowStallTimeS = 0;
 
 	constructor(config: EngineConfig, curve: readonly TorquePoint[], inertiaKgM2: number) {
 		this.config = config;
@@ -40,12 +47,21 @@ export class Engine {
 		this.inertiaKgM2 = inertiaKgM2;
 		this.omegaRadS = omegaFromRpm(config.idleRPM);
 		this.throttleActual = 0;
-		// Allow a little below the stall threshold before the governor saves it.
-		this.minOmegaRadS = omegaFromRpm(config.stallRPM * 0.6);
+		this.stallOmegaRadS = omegaFromRpm(config.stallRPM);
+		// A stalled engine may be cranked no lower than this.
+		this.minOmegaRadS = omegaFromRpm(config.stallRPM * 0.35);
 	}
 
 	get rpm(): number {
 		return rpmFromOmega(this.omegaRadS);
+	}
+
+	/** Restart a stalled engine (BLUEPRINT §27 "R"): back to idle. */
+	restart(): void {
+		this.stalled = false;
+		this.belowStallTimeS = 0;
+		this.omegaRadS = omegaFromRpm(this.config.idleRPM);
+		this.throttleActual = 0;
 	}
 
 	/**
@@ -62,10 +78,12 @@ export class Engine {
 		const rpm = this.rpm;
 
 		const wideOpenTorque = interpolateTorqueNm(this.curve, rpm);
-		const combustion = this.throttleActual * wideOpenTorque * this.limiterMultiplier(rpm);
+		const combustion = this.stalled
+			? 0
+			: this.throttleActual * wideOpenTorque * this.limiterMultiplier(rpm);
 
 		const friction = this.frictionTorqueNm();
-		const idleAssist = this.idleGovernorTorqueNm(rpm, friction);
+		const idleAssist = this.stalled ? 0 : this.idleGovernorTorqueNm(rpm, friction);
 
 		this.lastCombustionTorqueNm = combustion;
 		this.lastFrictionTorqueNm = friction;
@@ -73,6 +91,18 @@ export class Engine {
 		const netNm = combustion + idleAssist - friction - loadTorqueNm;
 		// Semi-implicit Euler on ω (MOTORCYCLE-PHYSICS.md §63).
 		this.omegaRadS = Math.max(this.omegaRadS + (netNm / this.inertiaKgM2) * dtS, this.minOmegaRadS);
+
+		// Stall (§23): the engine dies only when a load it cannot answer keeps it
+		// lugging below the stall threshold for a sustained moment — or drags it
+		// straight onto the floor. A brief clutch nip at part throttle recovers.
+		// Never stall from RPM alone (a neutral coast-down is governed toward idle).
+		if (!this.stalled) {
+			const overloaded = this.rpm < this.config.stallRPM && loadTorqueNm > combustion + idleAssist;
+			this.belowStallTimeS = overloaded ? this.belowStallTimeS + dtS : 0;
+			if (this.belowStallTimeS > 0.25 || this.omegaRadS <= this.minOmegaRadS + 1e-3) {
+				this.stalled = true;
+			}
+		}
 	}
 
 	/**

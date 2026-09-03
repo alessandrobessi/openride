@@ -75,4 +75,32 @@ describe('Engine (neutral / decoupled — M5)', () => {
 		run(loaded, 1.5, 0.5, 40);
 		expect(loaded.rpm).toBeLessThan(free.rpm);
 	});
+
+	it('stalls under a sustained load it cannot answer, and restarts', () => {
+		// Closed throttle, a load far beyond the idle governor's authority.
+		run(engine, 1, 0, 150);
+		expect(engine.stalled).toBe(true);
+		expect(engine.lastCombustionTorqueNm).toBe(0);
+
+		engine.restart();
+		expect(engine.stalled).toBe(false);
+		expect(engine.rpm).toBeCloseTo(engineConfig.idleRPM, 0);
+
+		// With the load removed it holds idle again.
+		run(engine, 2, 0);
+		expect(engine.stalled).toBe(false);
+		expect(engine.rpm).toBeGreaterThan(engineConfig.idleRPM - 150);
+	});
+
+	it('does not stall from a brief load nip at part throttle', () => {
+		run(engine, 0.5, 0.4); // spin up a little
+		run(engine, 0.15, 0.4, 120); // a short overload
+		run(engine, 0.5, 0.4); // release
+		expect(engine.stalled).toBe(false);
+	});
+
+	it('never stalls from low RPM alone (neutral coast, no load)', () => {
+		run(engine, 5, 0); // idles forever
+		expect(engine.stalled).toBe(false);
+	});
 });

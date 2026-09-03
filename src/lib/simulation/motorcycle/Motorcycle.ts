@@ -4,7 +4,7 @@ import { Engine } from '../engine/Engine';
 import { dragForceN } from '../aero/drag';
 import { rollingResistanceForceN } from '../tires/rollingResistance';
 import { brakeForcesN } from '../brakes/brakes';
-import { stubDriveForceN } from '../drivetrain/rearWheelDrive';
+import { Drivetrain } from '../drivetrain/Drivetrain';
 import { gradientForces } from '../world/gradient';
 import { DRY_ASPHALT, type SurfacePhysics } from '../world/surface';
 import {
@@ -43,10 +43,12 @@ export interface MotorcycleEnvironment {
  * **Scope so far**:
  * - M3 — the two-wheel rig: chassis body, raycast contacts, spring–damper
  *   suspension, a temporary balance stabiliser.
- * - M4 — longitudinal dynamics: a net forward force (stub drive − brakes −
- *   drag − rolling resistance − gradient) applied at the CG, so speed and top
- *   speed emerge from `m·a = ΣF` (AGENTS.md §13). Real engine, gearbox, clutch,
- *   tyre-force limits, rider control and weight transfer come next.
+ * - M4 — longitudinal dynamics: net forward force applied at the CG, so speed
+ *   emerges from `m·a = ΣF` (AGENTS.md §13).
+ * - M5 — engine as an isolated rotational system.
+ * - M6 — clutch + gearbox + final drive: the engine now drives (and back-drives)
+ *   the rear contact patch. The rear wheel is still locked to ground speed —
+ *   tyre-force limits, wheel spin, rider control and weight transfer come next.
  */
 interface WheelGeometry {
 	/** Strut-top attachment in the body frame: on the axle line, at CG height. */
@@ -96,6 +98,7 @@ export class Motorcycle {
 	private readonly geometry: GeometryConfig;
 	private readonly brakeConfig: BrakeConfig;
 	private readonly engine: Engine;
+	private readonly drivetrain: Drivetrain;
 
 	private environment: MotorcycleEnvironment = {
 		gradeFraction: 0,
@@ -131,6 +134,7 @@ export class Motorcycle {
 			config.powertrain.torqueCurve,
 			config.physical.inertia.engineKgM2
 		);
+		this.drivetrain = new Drivetrain(config.powertrain, geo);
 
 		this.zeroCompressionReachM = geo.cgHeightM;
 		this.front = {
@@ -156,24 +160,63 @@ export class Motorcycle {
 		this.environment = { ...this.environment, ...environment };
 	}
 
+	shiftUp(): void {
+		this.drivetrain.gearbox.shiftUp();
+	}
+
+	shiftDown(): void {
+		this.drivetrain.gearbox.shiftDown();
+	}
+
+	selectGear(gear: number): void {
+		this.drivetrain.gearbox.selectGear(gear);
+	}
+
+	/** Crank a stalled engine back to life (BLUEPRINT §27 "R"). */
+	restartEngine(): void {
+		this.engine.restart();
+		this.state.engineStalled = false;
+		this.state.engineRPM = this.engine.rpm;
+		this.state.engineOmegaRadS = this.engine.omegaRadS;
+	}
+
 	/** One fixed simulation step. Rapier is stepped by the caller afterwards. */
 	update(dtS: number): void {
 		this.rig.clearAccumulators();
 		this.syncPose();
 
-		// Engine as an isolated rotational system. Load torque is 0 until the
-		// clutch couples the crank to the rear wheel in M6.
-		this.engine.update(dtS, this.state.throttle, 0);
+		const forwardHoriz = this.forwardHorizontal();
+		const speedAlong = dot(this.state.linearVelocityWorldMps, forwardHoriz);
+		this.state.forwardSpeedMps = speedAlong;
+
+		// Powertrain: engine ← clutch/gearbox load ← rear wheel (locked to ground
+		// speed until M10). The drivetrain also returns the rear-contact drive
+		// force (positive) or engine-braking force (negative).
+		this.drivetrain.update(dtS);
+		const drive = this.drivetrain.solve(this.engine.omegaRadS, speedAlong, this.state.clutch);
+		const throttleForEngine = this.drivetrain.gearbox.torqueCutActive ? 0 : this.state.throttle;
+		this.engine.update(dtS, throttleForEngine, drive.engineLoadTorqueNm);
+
 		this.state.engineOmegaRadS = this.engine.omegaRadS;
 		this.state.engineRPM = this.engine.rpm;
 		this.state.engineTorqueNm =
 			this.engine.lastCombustionTorqueNm - this.engine.lastFrictionTorqueNm;
+		this.state.gear = this.drivetrain.gearbox.gear;
+		this.state.engineStalled = this.engine.stalled;
+		this.state.rearWheelOmegaRadS = drive.rearWheelOmegaRadS;
+		this.state.frontWheelOmegaRadS = speedAlong / this.geometry.frontWheelRadiusM;
+		this.state.driveForceN = drive.driveForceN;
 
 		this.frontCompressionM = this.updateWheel('front', this.front, dtS);
 		this.rearCompressionM = this.updateWheel('rear', this.rear, dtS);
 
-		this.applyLongitudinalForces();
+		this.applyLongitudinalForces(forwardHoriz, speedAlong, drive.driveForceN);
 		this.applyTemporaryStabiliser();
+	}
+
+	private forwardHorizontal(): Vec3 {
+		const forwardWorld = this.rig.localDirToWorld(FORWARD_LOCAL);
+		return normalize({ x: forwardWorld.x, y: 0, z: forwardWorld.z });
 	}
 
 	/**
@@ -182,16 +225,16 @@ export class Motorcycle {
 	 *   F_net = F_drive − F_brake − F_drag − F_rolling − F_grade
 	 *          (MOTORCYCLE-PHYSICS.md §13)
 	 *
-	 * Speed and top speed emerge from Rapier integrating this force — nothing
-	 * assigns velocity. Contact-patch application (and the resulting squat / dive)
-	 * is deferred to M11. Drive is a stub until M5/M6.
+	 * `driveForceN` comes from the drivetrain (positive under power, negative on
+	 * the overrun = engine braking). Speed emerges from Rapier integrating this
+	 * force — nothing assigns velocity. Contact-patch application (squat / dive)
+	 * and grip limiting are deferred to M11 / M10.
 	 */
-	private applyLongitudinalForces(): void {
-		const forwardWorld = this.rig.localDirToWorld(FORWARD_LOCAL);
-		const forwardHoriz = normalize({ x: forwardWorld.x, y: 0, z: forwardWorld.z });
-		const speedAlong = dot(this.state.linearVelocityWorldMps, forwardHoriz);
-		this.state.forwardSpeedMps = speedAlong;
-
+	private applyLongitudinalForces(
+		forwardHoriz: Vec3,
+		speedAlong: number,
+		driveForceN: number
+	): void {
 		const grade = gradientForces(this.massKg, this.environment.gradeFraction);
 		this.state.roadGradientRad = grade.angleRad;
 
@@ -199,9 +242,6 @@ export class Motorcycle {
 		const travelSign = speedAlong >= 0 ? 1 : -1;
 		const normalLoadN = this.state.frontNormalLoadN + this.state.rearNormalLoadN;
 
-		// Stub uses the lagged throttle so intake response is at least visible in
-		// acceleration; the real engine→wheel path replaces this in M6.
-		const driveN = stubDriveForceN(this.engine.throttleActual);
 		const dragN = moving ? dragForceN(Math.abs(speedAlong), this.aero) : 0;
 		const rollingN = moving
 			? rollingResistanceForceN(normalLoadN, this.environment.surface.rollingResistance)
@@ -214,7 +254,7 @@ export class Motorcycle {
 		);
 		const brakeN = moving ? braking.totalN : 0;
 
-		const netForwardN = driveN - travelSign * (dragN + rollingN + brakeN) - grade.alongSlopeN;
+		const netForwardN = driveForceN - travelSign * (dragN + rollingN + brakeN) - grade.alongSlopeN;
 
 		this.rig.addForceAtPointWorld(scale(forwardHoriz, netForwardN), this.state.positionWorldM);
 	}

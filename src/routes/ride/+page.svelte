@@ -11,6 +11,7 @@
 		speedKmh: 0,
 		rpm: 0,
 		gear: 0,
+		stalled: false,
 		frontLoadN: 0,
 		rearLoadN: 0
 	});
@@ -26,20 +27,27 @@
 		// Development keyboard mapping (OPENRIDE-BLUEPRINT.md §27). Full gamepad +
 		// configurable input is M22.
 		const held = new Set<string>();
-		const apply = () => {
+		const applyAnalog = () => {
 			viewport.setControls({
 				throttle: held.has('w') || held.has('arrowup') ? 1 : 0,
 				frontBrake: held.has('s') || held.has('arrowdown') ? 1 : 0,
 				rearBrake: held.has('s') || held.has('arrowdown') ? 1 : 0
 			});
+			viewport.setClutchEngaged(!(held.has('shift') || held.has('c')));
 		};
 		const down = (e: KeyboardEvent) => {
-			held.add(e.key.toLowerCase());
-			apply();
+			const k = e.key.toLowerCase();
+			if (!held.has(k)) {
+				if (k === 'e') viewport.shiftUp();
+				else if (k === 'q') viewport.shiftDown();
+				else if (k === 'r') viewport.restartEngine();
+			}
+			held.add(k);
+			applyAnalog();
 		};
 		const up = (e: KeyboardEvent) => {
 			held.delete(e.key.toLowerCase());
-			apply();
+			applyAnalog();
 		};
 		window.addEventListener('keydown', down);
 		window.addEventListener('keyup', up);
@@ -62,13 +70,13 @@
 		<span>{stats.fps.toFixed(0)} fps</span>
 		<span>{stats.physicsHz.toFixed(0)} Hz phys</span>
 		<span>{stats.drawCalls} draws</span>
-		<span>{stats.triangles.toLocaleString()} tris</span>
 		<span>{stats.speedKmh.toFixed(0)} km/h</span>
 		<span>{stats.rpm.toFixed(0)} rpm</span>
 		<span>gear {stats.gear === 0 ? 'N' : stats.gear}</span>
+		{#if stats.stalled}<span class="warn">STALLED</span>{/if}
 		<span>Fz {(stats.frontLoadN / 1000).toFixed(2)}/{(stats.rearLoadN / 1000).toFixed(2)} kN</span>
 	</div>
-	<div class="help">W / ↑ throttle · S / ↓ brake</div>
+	<div class="help">W/↑ throttle · S/↓ brake · Shift/C clutch · Q/E gear · R restart</div>
 </div>
 
 <style>
@@ -105,6 +113,11 @@
 			Menlo,
 			monospace;
 		pointer-events: none;
+	}
+
+	.warn {
+		color: #ffb454;
+		font-weight: 700;
 	}
 
 	.help {

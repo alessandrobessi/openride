@@ -39,9 +39,12 @@ export interface MotorcycleState {
 	engineRPM: number;
 	/** Net crankshaft torque (combustion − friction/engine-braking), N·m. */
 	engineTorqueNm: number;
+	engineStalled: boolean;
 	gear: number; // 0 = neutral
 	frontWheelOmegaRadS: number;
 	rearWheelOmegaRadS: number;
+	/** Longitudinal force delivered at the rear contact patch, N (+ drive / − engine braking). */
+	driveForceN: number;
 
 	// --- suspension / contact (M3+) ---
 	frontSuspensionCompressionM: number;
@@ -80,9 +83,11 @@ export function createMotorcycleState(): MotorcycleState {
 		engineOmegaRadS: 0,
 		engineRPM: 0,
 		engineTorqueNm: 0,
+		engineStalled: false,
 		gear: 0,
 		frontWheelOmegaRadS: 0,
 		rearWheelOmegaRadS: 0,
+		driveForceN: 0,
 
 		frontSuspensionCompressionM: 0,
 		rearSuspensionCompressionM: 0,

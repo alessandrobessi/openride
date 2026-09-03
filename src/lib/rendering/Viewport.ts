@@ -30,6 +30,7 @@ export interface ViewportStats {
 	speedKmh: number;
 	rpm: number;
 	gear: number;
+	stalled: boolean;
 	frontLoadN: number;
 	rearLoadN: number;
 }
@@ -56,6 +57,8 @@ export class Viewport {
 	private readonly simLoop = new SimulationLoop({ fixedDtS: FIXED_DT_S });
 	private rig: MotorcycleRig | undefined;
 	private readonly controls: MotorcycleControls = { ...NEUTRAL_CONTROLS };
+	/** Keyboard sets a target; the clutch eases toward it so takeup is smooth. */
+	private clutchTarget = 1;
 	private readonly disposables: Array<{ dispose: () => void }> = [];
 
 	private chassisMesh: THREE.Object3D | undefined;
@@ -95,6 +98,23 @@ export class Viewport {
 	/** Feed normalised control inputs (from keyboard/gamepad). Merged, not replaced. */
 	setControls(partial: Partial<MotorcycleControls>): void {
 		Object.assign(this.controls, partial);
+	}
+
+	/** Keyboard/gamepad clutch: true = engaged. The value eases toward this. */
+	setClutchEngaged(engaged: boolean): void {
+		this.clutchTarget = engaged ? 1 : 0;
+	}
+
+	shiftUp(): void {
+		this.rig?.motorcycle.shiftUp();
+	}
+
+	shiftDown(): void {
+		this.rig?.motorcycle.shiftDown();
+	}
+
+	restartEngine(): void {
+		this.rig?.motorcycle.restartEngine();
 	}
 
 	/** Build the physics world + motorcycle rig and begin rendering. */
@@ -202,6 +222,8 @@ export class Viewport {
 			const { motorcycle, world, chassisHandle } = this.rig;
 			const alpha = this.simLoop.advance(frame.frameDeltaS, (dtS) => {
 				this.prevTransform = this.currTransform;
+				// Ease the clutch toward its keyboard target (~0.25 s takeup).
+				this.controls.clutch += (this.clutchTarget - this.controls.clutch) * 0.15;
 				motorcycle.setControls(this.controls);
 				motorcycle.update(dtS);
 				world.step(dtS);
@@ -229,6 +251,7 @@ export class Viewport {
 				speedKmh: (this.rig?.motorcycle.state.forwardSpeedMps ?? 0) * 3.6,
 				rpm: this.rig?.motorcycle.state.engineRPM ?? 0,
 				gear: this.rig?.motorcycle.state.gear ?? 0,
+				stalled: this.rig?.motorcycle.state.engineStalled ?? false,
 				frontLoadN: this.rig?.motorcycle.state.frontNormalLoadN ?? 0,
 				rearLoadN: this.rig?.motorcycle.state.rearNormalLoadN ?? 0
 			});
