@@ -137,7 +137,13 @@ export class Engine {
 		const omega = Math.max(this.omegaRadS, 0);
 		const base = this.config.engineFrictionBaseNm;
 		const viscous = this.config.engineFrictionPerRadS * omega;
-		const engineBraking = this.config.engineBrakeCoefficient * (1 - this.throttleActual) * omega;
+		// Overrun engine braking fades out as the engine nears idle — a real
+		// engine barely retards down there, and keeping it here creates a
+		// part-throttle dead zone that kills low-speed manoeuvres (§17).
+		const idleOmega = omegaFromRpm(this.config.idleRPM);
+		const brakingFade = clamp((omega - idleOmega) / idleOmega, 0, 1);
+		const engineBraking =
+			this.config.engineBrakeCoefficient * (1 - this.throttleActual) * omega * brakingFade;
 		return base + viscous + engineBraking;
 	}
 
@@ -149,10 +155,14 @@ export class Engine {
 	 * band the governor releases so the engine can coast down normally.
 	 */
 	private idleGovernorTorqueNm(rpm: number, frictionNm: number): number {
-		if (this.throttleActual > 0.05) return 0;
 		if (rpm > this.config.idleRPM + 300) return 0;
+		// Full authority with the throttle shut, fading to nothing by ~20 % — so a
+		// light throttle through a crawl (a U-turn, a hairpin) still gets an
+		// anti-stall hand rather than lugging into the dead zone.
+		const throttleFade = clamp((0.2 - this.throttleActual) / 0.15, 0, 1);
+		if (throttleFade <= 0) return 0;
 		const errorRpm = this.config.idleRPM - rpm;
 		const proportionalNm = errorRpm * 0.15;
-		return clamp(frictionNm + proportionalNm, 0, 90);
+		return throttleFade * clamp(frictionNm + proportionalNm, 0, 90);
 	}
 }

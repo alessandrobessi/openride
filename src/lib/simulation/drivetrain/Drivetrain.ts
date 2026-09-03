@@ -37,6 +37,13 @@ import { Gearbox } from './Gearbox';
  * which is unconditionally stable and, for a large `k_c`, tends to `Δω_free / s`
  * — the constraint torque that fully closes the slip in one step (lock-up) —
  * until it hits the friction capacity `u_c·T_max` and the clutch slips.
+ *
+ * **Anti-stall.** A locked clutch at walking pace in a low gear would otherwise
+ * drag the engine straight below idle and stall it (e.g. a U-turn or a hairpin
+ * crawl). The drive-side clutch torque is therefore also capped at what leaves
+ * `ω_engine ≥ idle` after the step: below that the clutch slips (which is what a
+ * real clutch does down there) and the engine idles instead of dying. The
+ * overrun (engine braking, `T_c < 0`) is not constrained.
  */
 export interface DrivetrainSolution {
 	/** Reaction torque on the crankshaft, N·m (feed to Engine as load). */
@@ -59,6 +66,8 @@ export class Drivetrain {
 	private readonly efficiency: number;
 	private readonly engineInertiaKgM2: number;
 	private readonly rearWheelInertiaKgM2: number;
+	/** ω the anti-stall cap protects the engine down to (rad/s). */
+	private readonly idleFloorRadS: number;
 
 	constructor(powertrain: PowertrainConfig, inertia: InertiaConfig) {
 		this.gearbox = new Gearbox(powertrain.gearbox);
@@ -66,6 +75,8 @@ export class Drivetrain {
 		this.efficiency = powertrain.gearbox.efficiency;
 		this.engineInertiaKgM2 = inertia.engineKgM2;
 		this.rearWheelInertiaKgM2 = inertia.rearWheelKgM2;
+		// A hair below idle: the engine's own idle governor covers the last bit.
+		this.idleFloorRadS = ((powertrain.engine.idleRPM - 100) * Math.PI) / 30;
 	}
 
 	update(dtS: number): void {
@@ -109,7 +120,14 @@ export class Drivetrain {
 
 		// Past the friction capacity the clutch slips at constant torque.
 		const capNm = clutchCapacityNm(clutchEngagementU01, this.clutchConfig);
-		const clutchTorqueNm = Math.max(-capNm, Math.min(capNm, lockedTorqueNm));
+		let clutchTorqueNm = Math.max(-capNm, Math.min(capNm, lockedTorqueNm));
+
+		// Anti-stall: the largest crank load that still leaves ω_engine ≥ idle
+		// floor after this step. Only limits a *driving* (positive) clutch torque.
+		const idleHoldTorqueNm =
+			loads.engineFreeTorqueNm +
+			(this.engineInertiaKgM2 / dtS) * (engineOmegaRadS - this.idleFloorRadS);
+		clutchTorqueNm = Math.min(clutchTorqueNm, Math.max(0, idleHoldTorqueNm));
 
 		return {
 			engineLoadTorqueNm: clutchTorqueNm,

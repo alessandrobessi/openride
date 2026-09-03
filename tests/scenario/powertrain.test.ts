@@ -67,6 +67,27 @@ describe('M6 clutch + gearbox (headless)', () => {
 		rig.world.dispose();
 	});
 
+	it('crawls in first gear at a light throttle without the engaged clutch stalling it', async () => {
+		// A U-turn / hairpin crawl: 1st gear, clutch fully out, only a whiff of
+		// throttle, full steering lock to scrub speed right down. The lock-up
+		// clutch must slip (anti-stall) rather than drag the engine dead.
+		const { rig, step } = await makeRig();
+		rig.world.setLinearVelocity(rig.chassisHandle, { x: 0, y: 0, z: 6 });
+		rig.motorcycle.resyncWheelsToGround();
+		rig.motorcycle.selectGear(1);
+		let minSpeed = Infinity;
+		let t = 0;
+		step(8, (m) => {
+			t += RENDER_FRAME_S;
+			m.setControls({ ...NEUTRAL, throttle: 0.12, clutch: 1, steeringInput: 1 });
+			if (t > 1) minSpeed = Math.min(minSpeed, m.state.forwardSpeedMps);
+			expect(m.state.engineStalled).toBe(false); // never, at any point
+		});
+		expect(rig.motorcycle.state.engineRPM).toBeGreaterThan(800); // never lugged to the floor
+		expect(minSpeed).toBeGreaterThan(1); // settled into a steady crawl, didn't die
+		rig.world.dispose();
+	});
+
 	it('shifting up through the gearbox keeps accelerating past 100 km/h', async () => {
 		const { rig, step, launch } = await makeRig();
 		launch();
