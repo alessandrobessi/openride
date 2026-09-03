@@ -96,6 +96,10 @@ const RAY_SLACK_M = 0.35;
 // not instantaneous). Real front-contact steer geometry + tyre forces (M10)
 // will let this go away.
 const YAW_TRACK_TIME_S = 0.45;
+/** Ceiling on the rider's roll-axis moment, N·m (bar input × steering geometry). */
+const RIDER_ROLL_MOMENT_MAX_NM = 1000;
+/** Real dampers don't move faster than this; clamp keeps the explicit integrator sane. */
+const SUSPENSION_VEL_LIMIT_MPS = 5;
 
 /** Below this speed, velocity-opposing forces (drag, rolling resistance, brakes) are gated off. */
 const SPEED_DEADBAND_MPS = 0.03;
@@ -392,9 +396,16 @@ export class Motorcycle {
 		const cgLateralSpeed = dot(this.state.linearVelocityWorldMps, rightHoriz);
 		const centripetalN = -this.massKg * this.state.forwardSpeedMps * this.state.yawRateRadS;
 		const slipDampN = (-this.massKg * cgLateralSpeed) / 0.4;
-		const lateralDemandTotalN = centripetalN + slipDampN;
 
 		const totalLoadN = Math.max(this.state.frontNormalLoadN + this.state.rearNormalLoadN, 1);
+		// The demand can't exceed what the tyres could ever deliver — a stray yaw
+		// rate at speed must not ask for kilonewtons of side force.
+		const lateralDemandCapN = 1.4 * surface.muLateral * totalLoadN;
+		const lateralDemandTotalN = clamp(
+			centripetalN + slipDampN,
+			-lateralDemandCapN,
+			lateralDemandCapN
+		);
 		const geo = this.geometry;
 		let corneringForceN = 0; // summed lateral tyre force, applied on the contact line
 
@@ -566,7 +577,11 @@ export class Motorcycle {
 			normalWorld = hit.normalWorld;
 		}
 
-		const compressionVelMps = (compressionM - prevCompression) / dtS;
+		const compressionVelMps = clamp(
+			(compressionM - prevCompression) / dtS,
+			-SUSPENSION_VEL_LIMIT_MPS,
+			SUSPENSION_VEL_LIMIT_MPS
+		);
 		const forceN = grounded
 			? suspensionForceN({ compressionM, compressionVelMps }, wheel.suspension)
 			: 0;
@@ -624,7 +639,15 @@ export class Motorcycle {
 			cmd.targetLeanRad,
 			speedMps
 		);
-		this.rig.addTorqueWorld(scale(forwardWorld, balanceNm + cs.rollMomentNm));
+		// A rider can only torque the roll axis so hard — clamp so a controller
+		// transient (high Kd × a noisy roll rate at speed) can't inject unbounded
+		// angular momentum and toss the bike off the ground.
+		const rollMomentNm = clamp(
+			balanceNm + cs.rollMomentNm,
+			-RIDER_ROLL_MOMENT_MAX_NM,
+			RIDER_ROLL_MOMENT_MAX_NM
+		);
+		this.rig.addTorqueWorld(scale(forwardWorld, rollMomentNm));
 
 		// Telemetry: the geometric steer angle implied by the *current* yaw rate
 		// (bicycle model, §40) plus the turn-in countersteer transient. Right

@@ -22,6 +22,9 @@ export interface CreateMotorcycleRigOptions {
 	world?: RapierWorld;
 	/** Add a flat static ground at y = 0. Default true. */
 	withGround?: boolean;
+	/** Half-size of the default ground plane, metres. Default 1000 — raise it for
+	 *  high-speed / long-duration runs that would otherwise drive off the edge. */
+	groundHalfSizeM?: number;
 	/** Virtual rider profile. Default: the simulation rider. */
 	rider?: RiderProfile;
 	/** Assist configuration. Default: all safety assists on. */
@@ -38,7 +41,7 @@ export async function createMotorcycleRig(
 	options: CreateMotorcycleRigOptions = {}
 ): Promise<MotorcycleRig> {
 	const world = options.world ?? (await RapierWorld.create());
-	if (options.withGround ?? true) world.addStaticGround();
+	if (options.withGround ?? true) world.addStaticGround(options.groundHalfSizeM ?? 1000);
 
 	const inertia = config.physical.inertia;
 	const chassisHandle = world.addChassis({
