@@ -14,5 +14,9 @@
 	"vegetation": {
 		"file": "vegetation.bin",
 		"instanceCount": 5206
+	},
+	"buildings": {
+		"file": "buildings.json",
+		"count": 5
 	}
 }

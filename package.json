@@ -20,6 +20,7 @@
 		"test:watch": "vitest",
 		"test:e2e": "playwright test",
 		"world:fetch": "tsx tools/osm/fetch-stelvio.ts",
+		"world:fetch-buildings": "tsx tools/osm/fetch-buildings.ts",
 		"world:fetch-dem": "tsx tools/elevation/fetch-dem.ts",
 		"world:extract": "tsx tools/osm/extract-road.ts",
 		"world:elevation": "tsx tools/elevation/sample-elevation.ts",

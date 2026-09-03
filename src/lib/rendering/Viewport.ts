@@ -36,6 +36,7 @@ import { WorldManager, type ChunkSink } from '$lib/world/streaming/WorldManager'
 import { fetchScenery } from '$lib/world/scenery/loadScenery';
 import { createRoadFurniture, type RoadFurniture } from './environment/RoadFurniture';
 import { createVegetation, type Vegetation } from './environment/Vegetation';
+import { createBuildings, type Buildings } from './environment/Buildings';
 import { asset } from '$lib/paths';
 
 /** The world package the ride stage boots. */
@@ -133,6 +134,7 @@ export class Viewport {
 	/** Static scenery (M25–M28). */
 	private roadFurniture: RoadFurniture | undefined;
 	private vegetation: Vegetation | undefined;
+	private buildings: Buildings | undefined;
 
 	private frameCount = 0;
 	private disposed = false;
@@ -301,6 +303,10 @@ export class Viewport {
 				this.vegetation = createVegetation(scenery.vegetation);
 				this.testScene.scene.add(this.vegetation.group);
 			}
+			if (scenery.buildings && scenery.buildings.buildings.length > 0) {
+				this.buildings = createBuildings(scenery.buildings);
+				this.testScene.scene.add(this.buildings.group);
+			}
 		} catch (err) {
 			console.warn('Scenery package unavailable — skipping:', err);
 		}
@@ -429,6 +435,7 @@ export class Viewport {
 		this.terrainMeshes.clear();
 		this.roadFurniture?.dispose();
 		this.vegetation?.dispose();
+		this.buildings?.dispose();
 		this.engineAudio.dispose();
 		this.ambientAudio.dispose();
 		this.fpCamera.dispose();

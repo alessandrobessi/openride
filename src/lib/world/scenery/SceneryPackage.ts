@@ -4,6 +4,7 @@
  * under `static/worlds/<id>/scenery/`. The runtime only instances them.
  */
 import type { FurniturePost } from './furniturePlacement';
+import type { BuildingFootprint } from './buildingExtraction';
 
 export interface SceneryIndex {
 	worldId: string;
@@ -11,6 +12,24 @@ export interface SceneryIndex {
 	furniture?: { file: string; postCount: number; railCount: number };
 	vegetation?: { file: string; instanceCount: number };
 	buildings?: { file: string; count: number };
+}
+
+export interface BuildingsData {
+	buildings: BuildingFootprint[];
+}
+
+export function assertBuildingsData(value: unknown): asserts value is BuildingsData {
+	if (!value || typeof value !== 'object') fail('buildings is not an object');
+	const b = value as Partial<BuildingsData>;
+	if (!Array.isArray(b.buildings)) fail('buildings.buildings must be an array');
+	for (const item of b.buildings) {
+		if (!Array.isArray(item.footprint) || item.footprint.length < 3) {
+			fail('a building has a degenerate footprint');
+		}
+		if (!Number.isFinite(item.baseY) || !Number.isFinite(item.heightM) || item.heightM <= 0) {
+			fail('a building has a non-finite baseY / heightM');
+		}
+	}
 }
 
 export interface FurnitureData {
