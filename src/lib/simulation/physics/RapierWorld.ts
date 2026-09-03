@@ -135,6 +135,11 @@ export class RapierWorld {
 		this.world.getRigidBody(handle).setLinvel(velocityMps, true);
 	}
 
+	/** Set a body's angular velocity directly (test setup / disturbance injection only). */
+	setAngularVelocity(handle: number, angularVelocityRadS: Vec3): void {
+		this.world.getRigidBody(handle).setAngvel(angularVelocityRadS, true);
+	}
+
 	angularVelocity(handle: number): Vec3 {
 		const w = this.world.getRigidBody(handle).angvel();
 		return { x: w.x, y: w.y, z: w.z };

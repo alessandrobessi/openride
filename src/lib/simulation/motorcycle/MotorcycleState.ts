@@ -21,6 +21,10 @@ export interface MotorcycleState {
 	yawRad: number;
 	pitchRad: number;
 	rollRad: number;
+	rollRateRadS: number;
+	yawRateRadS: number;
+	/** Virtual-rider target lean for the current speed + turn intention, rad. */
+	targetLeanRad: number;
 	/** Signed forward ground speed along the horizontal heading, m/s (derived). */
 	forwardSpeedMps: number;
 	/** Road gradient at the contact, radians (derived; + = uphill ahead). */
@@ -70,6 +74,9 @@ export function createMotorcycleState(): MotorcycleState {
 		yawRad: 0,
 		pitchRad: 0,
 		rollRad: 0,
+		rollRateRadS: 0,
+		yawRateRadS: 0,
+		targetLeanRad: 0,
 		forwardSpeedMps: 0,
 		roadGradientRad: 0,
 

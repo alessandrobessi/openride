@@ -31,6 +31,8 @@ export interface ViewportStats {
 	rpm: number;
 	gear: number;
 	stalled: boolean;
+	rollDeg: number;
+	targetLeanDeg: number;
 	frontLoadN: number;
 	rearLoadN: number;
 }
@@ -252,6 +254,8 @@ export class Viewport {
 				rpm: this.rig?.motorcycle.state.engineRPM ?? 0,
 				gear: this.rig?.motorcycle.state.gear ?? 0,
 				stalled: this.rig?.motorcycle.state.engineStalled ?? false,
+				rollDeg: ((this.rig?.motorcycle.state.rollRad ?? 0) * 180) / Math.PI,
+				targetLeanDeg: ((this.rig?.motorcycle.state.targetLeanRad ?? 0) * 180) / Math.PI,
 				frontLoadN: this.rig?.motorcycle.state.frontNormalLoadN ?? 0,
 				rearLoadN: this.rig?.motorcycle.state.rearNormalLoadN ?? 0
 			});

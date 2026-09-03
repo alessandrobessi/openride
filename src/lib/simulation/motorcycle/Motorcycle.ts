@@ -1,10 +1,14 @@
-import { clamp, dot, normalize, scale, toYawPitchRoll, vec3, type Vec3 } from '../core/math';
+import { clamp, cross, dot, normalize, scale, toYawPitchRoll, vec3, type Vec3 } from '../core/math';
 import { clampCompressionM, suspensionForceN } from '../suspension/suspension';
 import { Engine } from '../engine/Engine';
 import { dragForceN } from '../aero/drag';
 import { rollingResistanceForceN } from '../tires/rollingResistance';
 import { brakeForcesN } from '../brakes/brakes';
 import { Drivetrain } from '../drivetrain/Drivetrain';
+import { BalanceController } from '../rider/BalanceController';
+import { SteeringController } from '../rider/SteeringController';
+import type { RiderProfile } from '../rider/RiderProfile';
+import { GRAVITY_MPS2 } from '../core/constants';
 import { gradientForces } from '../world/gradient';
 import { DRY_ASPHALT, type SurfacePhysics } from '../world/surface';
 import {
@@ -46,9 +50,12 @@ export interface MotorcycleEnvironment {
  * - M4 — longitudinal dynamics: net forward force applied at the CG, so speed
  *   emerges from `m·a = ΣF` (AGENTS.md §13).
  * - M5 — engine as an isolated rotational system.
- * - M6 — clutch + gearbox + final drive: the engine now drives (and back-drives)
- *   the rear contact patch. The rear wheel is still locked to ground speed —
- *   tyre-force limits, wheel spin, rider control and weight transfer come next.
+ * - M6 — clutch + gearbox + final drive: the engine drives (and back-drives) the
+ *   rear contact patch.
+ * - M7 — virtual rider: a speed-scaled balance controller (with gravity
+ *   feed-forward) keeps the bike upright and leans it toward a steering target;
+ *   a temporary yaw-rate tracker turns the bike. Real lean dynamics (M8),
+ *   countersteering (M9), tyre forces (M10) and weight transfer (M11) follow.
  */
 interface WheelGeometry {
 	/** Strut-top attachment in the body frame: on the axle line, at CG height. */
@@ -56,18 +63,14 @@ interface WheelGeometry {
 	suspension: AxleSuspensionConfig;
 }
 
-// TEMP until M7: the virtual-rider balance controller replaces this. It keeps
-// the free two-wheel body upright so M3 can be inspected and tested —
-// deliberately crude: a roll angle/rate PD about the body forward axis plus
-// light angular damping. It applies no lateral or longitudinal force.
-const TEMP_ROLL_STIFFNESS_NM_PER_RAD = 4200;
-const TEMP_ROLL_DAMPING_NM_S_PER_RAD = 850;
-const TEMP_ANGULAR_DAMPING_NM_S = 220;
-
 const DOWN_WORLD: Vec3 = { x: 0, y: -1, z: 0 };
 const UP_WORLD: Vec3 = { x: 0, y: 1, z: 0 };
 const FORWARD_LOCAL: Vec3 = { x: 0, y: 0, z: 1 };
 const RAY_SLACK_M = 0.35;
+
+// TEMP until M9: yaw-rate tracking torque that realises the steering command
+// directly instead of through a countersteering steer torque + tyre forces.
+const YAW_TRACK_TIME_S = 0.22;
 
 /** Below this speed, velocity-opposing forces (drag, rolling resistance, brakes) are gated off. */
 const SPEED_DEADBAND_MPS = 0.03;
@@ -99,6 +102,9 @@ export class Motorcycle {
 	private readonly brakeConfig: BrakeConfig;
 	private readonly engine: Engine;
 	private readonly drivetrain: Drivetrain;
+	private readonly yawInertiaKgM2: number;
+	private readonly balanceController: BalanceController;
+	private readonly steeringController: SteeringController;
 
 	private environment: MotorcycleEnvironment = {
 		gradeFraction: 0,
@@ -119,7 +125,7 @@ export class Motorcycle {
 		return config.physical.geometry.cgHeightM + 0.05;
 	}
 
-	constructor(rig: ChassisRig, config: MotorcycleConfig) {
+	constructor(rig: ChassisRig, config: MotorcycleConfig, rider: RiderProfile) {
 		this.rig = rig;
 		this.config = config;
 		this.state = createMotorcycleState();
@@ -129,12 +135,18 @@ export class Motorcycle {
 		this.massKg = config.physical.mass.totalKg;
 		this.aero = config.physical.aero;
 		this.brakeConfig = config.chassis.brakes;
+		this.yawInertiaKgM2 = config.physical.inertia.yawKgM2;
 		this.engine = new Engine(
 			config.powertrain.engine,
 			config.powertrain.torqueCurve,
 			config.physical.inertia.engineKgM2
 		);
 		this.drivetrain = new Drivetrain(config.powertrain, geo);
+		this.balanceController = new BalanceController(
+			rider.balance,
+			this.massKg * GRAVITY_MPS2 * geo.cgHeightM
+		);
+		this.steeringController = new SteeringController(rider, geo.wheelbaseM, geo.maxLeanAngleRad);
 
 		this.zeroCompressionReachM = geo.cgHeightM;
 		this.front = {
@@ -211,7 +223,7 @@ export class Motorcycle {
 		this.rearCompressionM = this.updateWheel('rear', this.rear, dtS);
 
 		this.applyLongitudinalForces(forwardHoriz, speedAlong, drive.driveForceN);
-		this.applyTemporaryStabiliser();
+		this.applyRiderControl(speedAlong, dtS);
 	}
 
 	private forwardHorizontal(): Vec3 {
@@ -313,17 +325,72 @@ export class Motorcycle {
 		return compressionM;
 	}
 
-	private applyTemporaryStabiliser(): void {
+	/**
+	 * Virtual-rider control (MOTORCYCLE-PHYSICS.md §43–46):
+	 * 1. steering command  u_s → target lean + target yaw rate;
+	 * 2. balance controller → roll-axis torque toward the target lean, scaled
+	 *    down with speed;
+	 * 3. TEMP (until M9): a first-order yaw-rate tracker realises the turn.
+	 */
+	private applyRiderControl(speedMps: number, dtS: number): void {
 		const forwardWorld = this.rig.localDirToWorld(FORWARD_LOCAL);
-		const angularVelocityWorld = this.state.angularVelocityWorldRadS;
-		const rollRateAboutForward = dot(angularVelocityWorld, forwardWorld);
+		const angVel = this.state.angularVelocityWorldRadS;
+		const rollRateRadS = dot(angVel, forwardWorld);
+		const yawRateRadS = dot(angVel, UP_WORLD);
+		this.state.rollRateRadS = rollRateRadS;
+		this.state.yawRateRadS = yawRateRadS;
 
-		const rollTorque =
-			-TEMP_ROLL_STIFFNESS_NM_PER_RAD * this.state.rollRad -
-			TEMP_ROLL_DAMPING_NM_S_PER_RAD * rollRateAboutForward;
+		const cmd = this.steeringController.command(this.state.steeringInput, speedMps, dtS);
+		this.state.targetLeanRad = cmd.targetLeanRad;
+		this.state.steeringAngleRad = cmd.steeringAngleRad;
 
-		this.rig.addTorqueWorld(scale(forwardWorld, rollTorque));
-		this.rig.addTorqueWorld(scale(angularVelocityWorld, -TEMP_ANGULAR_DAMPING_NM_S));
+		const rollTorqueNm = this.balanceController.torqueNm(
+			this.state.rollRad,
+			rollRateRadS,
+			cmd.targetLeanRad,
+			speedMps
+		);
+		this.rig.addTorqueWorld(scale(forwardWorld, rollTorqueNm));
+
+		// TEMP until M9: drive yaw rate toward the command with a bounded torque.
+		const yawErrorRadS = cmd.targetYawRateRadS - yawRateRadS;
+		const yawTorqueNm = clamp((this.yawInertiaKgM2 * yawErrorRadS) / YAW_TRACK_TIME_S, -1500, 1500);
+		this.rig.addTorqueWorld(scale(UP_WORLD, yawTorqueNm));
+
+		this.applyProvisionalCorneringForce(forwardWorld, yawRateRadS, speedMps);
+	}
+
+	/**
+	 * TEMP until M10 (tyre forces). With no slip-angle tyre model there is nothing
+	 * to curve the CG's path when the chassis yaws, so the bike would just slide.
+	 * This adds the centripetal force that makes the CG follow the arc the heading
+	 * sweeps, plus lateral-slip damping so it tracks rather than scrubs. M10
+	 * replaces this with real lateral tyre forces from slip angle.
+	 */
+	private applyProvisionalCorneringForce(
+		forwardWorld: Vec3,
+		yawRateRadS: number,
+		speedMps: number
+	): void {
+		const forwardHoriz = normalize({ x: forwardWorld.x, y: 0, z: forwardWorld.z });
+		const rightHoriz = normalize(cross(forwardHoriz, UP_WORLD)); // right-hand: forward × up
+		const lateralSpeed = dot(this.state.linearVelocityWorldMps, rightHoriz);
+
+		// Centripetal: yawing left (yawRate > 0 about +y) curves the path left,
+		// so the required force points left = −right.
+		const centripetalN = -this.massKg * speedMps * yawRateRadS;
+		const slipDampN = (-this.massKg * lateralSpeed) / 0.3;
+
+		// Apply at the contact line (midway between the wheel contact points), like
+		// a tyre force — on the roll axis, so it curves the path without adding a
+		// roll moment. Lean equilibrium is then set by gravity vs the balance
+		// controller, so the bike settles near φ_target rather than lying down.
+		const contactMid: Vec3 = {
+			x: (this.debug.frontContactWorldM.x + this.debug.rearContactWorldM.x) / 2,
+			y: (this.debug.frontContactWorldM.y + this.debug.rearContactWorldM.y) / 2,
+			z: (this.debug.frontContactWorldM.z + this.debug.rearContactWorldM.z) / 2
+		};
+		this.rig.addForceAtPointWorld(scale(rightHoriz, centripetalN + slipDampN), contactMid);
 	}
 
 	private syncPose(): void {

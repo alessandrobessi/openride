@@ -12,6 +12,8 @@
 		rpm: 0,
 		gear: 0,
 		stalled: false,
+		rollDeg: 0,
+		targetLeanDeg: 0,
 		frontLoadN: 0,
 		rearLoadN: 0
 	});
@@ -28,10 +30,13 @@
 		// configurable input is M22.
 		const held = new Set<string>();
 		const applyAnalog = () => {
+			const left = held.has('a') || held.has('arrowleft');
+			const right = held.has('d') || held.has('arrowright');
 			viewport.setControls({
 				throttle: held.has('w') || held.has('arrowup') ? 1 : 0,
 				frontBrake: held.has('s') || held.has('arrowdown') ? 1 : 0,
-				rearBrake: held.has('s') || held.has('arrowdown') ? 1 : 0
+				rearBrake: held.has('s') || held.has('arrowdown') ? 1 : 0,
+				steeringInput: (right ? 1 : 0) - (left ? 1 : 0)
 			});
 			viewport.setClutchEngaged(!(held.has('shift') || held.has('c')));
 		};
@@ -73,10 +78,13 @@
 		<span>{stats.speedKmh.toFixed(0)} km/h</span>
 		<span>{stats.rpm.toFixed(0)} rpm</span>
 		<span>gear {stats.gear === 0 ? 'N' : stats.gear}</span>
+		<span>lean {stats.rollDeg.toFixed(0)}° / {stats.targetLeanDeg.toFixed(0)}°</span>
 		{#if stats.stalled}<span class="warn">STALLED</span>{/if}
 		<span>Fz {(stats.frontLoadN / 1000).toFixed(2)}/{(stats.rearLoadN / 1000).toFixed(2)} kN</span>
 	</div>
-	<div class="help">W/↑ throttle · S/↓ brake · Shift/C clutch · Q/E gear · R restart</div>
+	<div class="help">
+		W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart
+	</div>
 </div>
 
 <style>

@@ -1,5 +1,7 @@
 import type { MotorcycleConfig } from '../motorcycle/config';
 import { Motorcycle } from '../motorcycle/Motorcycle';
+import type { RiderProfile } from '../rider/RiderProfile';
+import { DEFAULT_RIDER } from '../rider/profiles/default-rider';
 import { RapierChassisRig } from './RapierChassisRig';
 import { RapierWorld } from './RapierWorld';
 
@@ -19,6 +21,8 @@ export interface CreateMotorcycleRigOptions {
 	world?: RapierWorld;
 	/** Add a flat static ground at y = 0. Default true. */
 	withGround?: boolean;
+	/** Virtual rider profile. Default: the simulation rider. */
+	rider?: RiderProfile;
 }
 
 // Rough bike-sized cuboid for future terrain/crash collision. Sensor-only in M3.
@@ -45,6 +49,6 @@ export async function createMotorcycleRig(
 	});
 
 	const rig = new RapierChassisRig(world, chassisHandle);
-	const motorcycle = new Motorcycle(rig, config);
+	const motorcycle = new Motorcycle(rig, config, options.rider ?? DEFAULT_RIDER);
 	return { world, motorcycle, chassisHandle };
 }
