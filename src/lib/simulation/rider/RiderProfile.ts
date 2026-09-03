@@ -17,6 +17,15 @@ export interface RiderBalanceProfile {
 	minimalAssistAboveMps: number;
 	/** Assist floor once real stabilising physics (lean, countersteer, tyres) is online. */
 	minAssistFactor: number;
+	/**
+	 * Floor for the inverted-pendulum gravity feed-forward once tyre cornering
+	 * forces are online (M10): at parking speed the FF fully cancels the leaning
+	 * moment (factor 1), but at riding speed the tyre lateral force already
+	 * provides the stand-up moment, so keeping the full FF there double-counts and
+	 * pins the bike short of its target lean. Fades 1 → this over the same
+	 * speed range as `assistFactor` (§39, §46).
+	 */
+	gravityFeedForwardFloor: number;
 }
 
 export interface RiderSteeringProfile {

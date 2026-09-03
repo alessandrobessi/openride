@@ -30,19 +30,28 @@ export class BalanceController {
 		this.gravityFfNm = cgGravityTorquePerRad;
 	}
 
-	/** Assist scale 1 → minAssistFactor as speed rises (§46). */
-	assistFactor(speedMps: number): number {
-		const t = smoothstep(
+	/** Speed blend 0 → 1 over the parking-speed → riding-speed range (§46). */
+	private speedBlend(speedMps: number): number {
+		return smoothstep(
 			this.profile.fullAssistBelowMps,
 			this.profile.minimalAssistAboveMps,
 			Math.abs(speedMps)
 		);
-		return 1 - t * (1 - this.profile.minAssistFactor);
+	}
+
+	/** Assist scale 1 → minAssistFactor as speed rises (§46). */
+	assistFactor(speedMps: number): number {
+		return 1 - this.speedBlend(speedMps) * (1 - this.profile.minAssistFactor);
+	}
+
+	/** Gravity feed-forward scale 1 → gravityFeedForwardFloor as speed rises (§39). */
+	feedForwardFactor(speedMps: number): number {
+		return 1 - this.speedBlend(speedMps) * (1 - this.profile.gravityFeedForwardFloor);
 	}
 
 	/** Roll-axis torque, N·m (+ rolls toward +φ). */
 	torqueNm(rollRad: number, rollRateRadS: number, targetLeanRad: number, speedMps: number): number {
-		const feedForward = -this.gravityFfNm * Math.sin(rollRad);
+		const feedForward = -this.gravityFfNm * Math.sin(rollRad) * this.feedForwardFactor(speedMps);
 		const pd = this.profile.rollKp * (targetLeanRad - rollRad) - this.profile.rollKd * rollRateRadS;
 		return this.assistFactor(speedMps) * (feedForward + pd);
 	}

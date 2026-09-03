@@ -26,13 +26,23 @@ describe('BalanceController', () => {
 		expect(Math.abs(t)).toBeGreaterThan(gravityMoment); // net stabilising
 	});
 
-	it('holds a commanded lean with a sustained torque opposing gravity (no cornering force yet)', () => {
+	it('holds a commanded lean with a sustained torque opposing gravity, faded by speed', () => {
 		const target = 0.35;
 		const t = bc.torqueNm(target, 0, target, 5);
-		// Assist-scaled; opposes gravity's leaning moment at the target.
-		const expected = -bc.assistFactor(5) * GRAV_FF * Math.sin(target);
+		// At the target lean with no roll rate the PD term is zero, so only the
+		// (speed-faded) inverted-pendulum feed-forward remains: it opposes
+		// gravity's leaning moment but is scaled down now that tyre cornering
+		// forces (M10) carry the lean at speed.
+		const expected = -bc.assistFactor(5) * bc.feedForwardFactor(5) * GRAV_FF * Math.sin(target);
 		expect(t).toBeCloseTo(expected, 6);
 		expect(t).toBeLessThan(0);
+	});
+
+	it('fades the gravity feed-forward from full at parking speed toward its floor at speed', () => {
+		expect(bc.feedForwardFactor(0)).toBe(1);
+		expect(bc.feedForwardFactor(2)).toBe(1);
+		expect(bc.feedForwardFactor(15)).toBeCloseTo(DEFAULT_RIDER.balance.gravityFeedForwardFloor, 5);
+		expect(bc.feedForwardFactor(2)).toBeGreaterThan(bc.feedForwardFactor(11));
 	});
 
 	it('damps roll rate', () => {

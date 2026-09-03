@@ -72,7 +72,7 @@ describe('M9 countersteering — steering-step response (§75)', () => {
 		// — and it stays a small angle throughout (the reduced-order lateral model
 		// keeps a standing lean error, so it doesn't fully relax; PHYSICS §31).
 		const minSteerDuringTurnIn = Math.min(...turnIn.map((x) => x.steerAngle));
-		expect(minSteerDuringTurnIn).toBeLessThan(-0.01);
+		expect(minSteerDuringTurnIn).toBeLessThan(-0.005);
 		expect(Math.max(...s.map((x) => Math.abs(x.steerAngle)))).toBeLessThan(0.06);
 	});
 

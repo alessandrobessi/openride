@@ -95,9 +95,9 @@ const RAY_SLACK_M = 0.35;
 // Yaw-rate tracker time constant: soft, so heading lags the lean (turn-in is
 // not instantaneous). Real front-contact steer geometry + tyre forces (M10)
 // will let this go away.
-const YAW_TRACK_TIME_S = 0.45;
+const YAW_TRACK_TIME_S = 0.12;
 /** Ceiling on the rider's roll-axis moment, N·m (bar input × steering geometry). */
-const RIDER_ROLL_MOMENT_MAX_NM = 1000;
+const RIDER_ROLL_MOMENT_MAX_NM = 2000;
 /** Real dampers don't move faster than this; clamp keeps the explicit integrator sane. */
 const SUSPENSION_VEL_LIMIT_MPS = 5;
 
@@ -395,7 +395,7 @@ export class Motorcycle {
 		// replacing the yaw-led mechanism is a later refinement (§31).
 		const cgLateralSpeed = dot(this.state.linearVelocityWorldMps, rightHoriz);
 		const centripetalN = -this.massKg * this.state.forwardSpeedMps * this.state.yawRateRadS;
-		const slipDampN = (-this.massKg * cgLateralSpeed) / 0.4;
+		const slipDampN = (-this.massKg * cgLateralSpeed) / 2.0;
 
 		const totalLoadN = Math.max(this.state.frontNormalLoadN + this.state.rearNormalLoadN, 1);
 		// The demand can't exceed what the tyres could ever deliver — a stray yaw
