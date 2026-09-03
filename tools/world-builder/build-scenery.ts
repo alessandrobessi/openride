@@ -1,40 +1,76 @@
 /**
  * Bake the Stelvio scenery package (milestones M25–M27) from the road + terrain
- * outputs. Runs before `world:manifest` in `pnpm world:build`.
+ * + DEM outputs. Runs before `world:manifest` in `pnpm world:build`.
  *
  *   pnpm world:scenery
  *
- * M25 — road furniture: guardrail posts + rails and delineator posts along both
- * edges, from the semantic centerline (src/lib/world/scenery/furniturePlacement).
+ * M25 — road furniture: guardrail posts + rails and delineator posts.
+ * M26 — vegetation: conifers by altitude / slope, off the road, packed to .bin.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { LocalFrame } from '../../src/lib/world/geo/enu';
+import { DemSampler } from '../elevation/dem-sampler';
 import {
 	placeFurniture,
 	type CenterlinePoint
 } from '../../src/lib/world/scenery/furniturePlacement';
+import { placeVegetation } from '../../src/lib/world/scenery/vegetationPlacement';
 
 const WORLD_DIR = resolve(import.meta.dirname, '../../static/worlds/stelvio');
 const ROADS_DIR = resolve(WORLD_DIR, 'roads');
 const SCENERY_DIR = resolve(WORLD_DIR, 'scenery');
+const DEM_DIR = resolve(import.meta.dirname, '../data/dem');
+
+/** Stelvio treeline, local y (elevation − origin altitude ≈ 1604 m). */
+const TREELINE_LOCAL_Y = 560;
+/** Margin around the road bounds to scatter vegetation into. */
+const VEG_MARGIN_M = 260;
 
 interface RoadPackage {
+	origin: { latDeg: number; lonDeg: number; altM: number };
 	centerline: CenterlinePoint[];
 	tags?: { widthM?: number };
 }
 
 const round = (v: number, dp = 3): number => Math.round(v * 10 ** dp) / 10 ** dp;
 
-function main(): void {
+/** Distance from (x, z) to the centreline polyline (with a per-segment AABB reject). */
+function roadDistance(x: number, z: number, cl: CenterlinePoint[], cap: number): number {
+	let best = cap;
+	for (let i = 0; i < cl.length - 1; i++) {
+		const a = cl[i];
+		const b = cl[i + 1];
+		if (
+			x < Math.min(a.x, b.x) - cap ||
+			x > Math.max(a.x, b.x) + cap ||
+			z < Math.min(a.z, b.z) - cap ||
+			z > Math.max(a.z, b.z) + cap
+		) {
+			continue;
+		}
+		const dx = b.x - a.x;
+		const dz = b.z - a.z;
+		const len2 = dx * dx + dz * dz || 1e-9;
+		let t = ((x - a.x) * dx + (z - a.z) * dz) / len2;
+		t = t < 0 ? 0 : t > 1 ? 1 : t;
+		const d = Math.hypot(x - (a.x + t * dx), z - (a.z + t * dz));
+		if (d < best) best = d;
+	}
+	return best;
+}
+
+async function main(): Promise<void> {
 	const roadPath = resolve(ROADS_DIR, 'ss38.json');
 	if (!existsSync(roadPath)) throw new Error(`missing pipeline output: ${roadPath}`);
 	const road = JSON.parse(readFileSync(roadPath, 'utf8')) as RoadPackage;
 	const roadWidthM = road.tags?.widthM ?? 6;
+	const cl = road.centerline;
 
 	mkdirSync(SCENERY_DIR, { recursive: true });
 
 	// --- M25: road furniture ---
-	const furniture = placeFurniture(road.centerline, { roadWidthM });
+	const furniture = placeFurniture(cl, { roadWidthM });
 	const posts = furniture.posts.map((p) => ({
 		x: round(p.x),
 		y: round(p.y),
@@ -48,9 +84,42 @@ function main(): void {
 	);
 	writeFileSync(resolve(SCENERY_DIR, 'furniture.json'), JSON.stringify({ posts, rails }) + '\n');
 
+	// --- M26: vegetation ---
+	const frame = new LocalFrame(road.origin);
+	const dem = await DemSampler.load(DEM_DIR);
+	const heightAt = (x: number, z: number): number => {
+		const g = frame.toGeo({ x, y: 0, z });
+		const elev = dem.elevationAt(g.lonDeg, g.latDeg);
+		if (!Number.isFinite(elev)) return Number.NaN;
+		return frame.toLocal({ latDeg: g.latDeg, lonDeg: g.lonDeg, altM: elev }).y;
+	};
+
+	const xs = cl.map((p) => p.x);
+	const zs = cl.map((p) => p.z);
+	const vegBounds = {
+		minX: Math.min(...xs) - VEG_MARGIN_M,
+		minZ: Math.min(...zs) - VEG_MARGIN_M,
+		maxX: Math.max(...xs) + VEG_MARGIN_M,
+		maxZ: Math.max(...zs) + VEG_MARGIN_M
+	};
+	const trees = placeVegetation(
+		vegBounds,
+		{ heightAt, roadDistAt: (x, z) => roadDistance(x, z, cl, 40) },
+		{ treelineLocalY: TREELINE_LOCAL_Y, seed: 20260903 }
+	);
+	const vegBuf = Buffer.alloc(4 + trees.length * 5 * 4);
+	vegBuf.writeUInt32LE(trees.length, 0);
+	trees.forEach((t, i) => {
+		const o = 4 + i * 20;
+		vegBuf.writeFloatLE(t.x, o);
+		vegBuf.writeFloatLE(t.y, o + 4);
+		vegBuf.writeFloatLE(t.z, o + 8);
+		vegBuf.writeFloatLE(t.scale, o + 12);
+		vegBuf.writeFloatLE(t.ry, o + 16);
+	});
+	writeFileSync(resolve(SCENERY_DIR, 'vegetation.bin'), vegBuf);
+
 	// --- index ---
-	const xs = road.centerline.map((p) => p.x);
-	const zs = road.centerline.map((p) => p.z);
 	const index = {
 		worldId: 'stelvio',
 		bounds: {
@@ -63,22 +132,21 @@ function main(): void {
 			file: 'furniture.json',
 			postCount: posts.length,
 			railCount: rails.reduce((n, r) => n + r.length, 0)
-		}
+		},
+		vegetation: { file: 'vegetation.bin', instanceCount: trees.length }
 	};
 	writeFileSync(resolve(SCENERY_DIR, 'index.json'), JSON.stringify(index, null, '\t') + '\n');
 
 	const guardrails = posts.filter((p) => p.kind === 'guardrail').length;
-	const delineators = posts.length - guardrails;
 	process.stdout.write(
-		`Scenery: ${guardrails} guardrail posts, ${delineators} delineators, ` +
-			`${index.furniture.railCount} rail points over ${rails.length} rails\n` +
-			`Wrote ${SCENERY_DIR}/furniture.json, index.json\n`
+		`Scenery: ${guardrails} guardrail posts, ${posts.length - guardrails} delineators, ` +
+			`${index.furniture.railCount} rail points; ${trees.length} trees ` +
+			`(${(vegBuf.length / 1024).toFixed(0)} kB)\n` +
+			`Wrote ${SCENERY_DIR}/{furniture.json, vegetation.bin, index.json}\n`
 	);
 }
 
-try {
-	main();
-} catch (err) {
+main().catch((err) => {
 	console.error(err);
 	process.exit(1);
-}
+});

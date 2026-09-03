@@ -10,5 +10,9 @@
 		"file": "furniture.json",
 		"postCount": 5344,
 		"railCount": 4188
+	},
+	"vegetation": {
+		"file": "vegetation.bin",
+		"instanceCount": 5206
 	}
 }

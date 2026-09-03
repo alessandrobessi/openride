@@ -1,13 +1,16 @@
 import {
 	assertFurnitureData,
 	assertSceneryIndex,
+	parseVegetation,
 	type FurnitureData,
-	type SceneryIndex
+	type SceneryIndex,
+	type VegetationData
 } from './SceneryPackage';
 
 export interface LoadedScenery {
 	index: SceneryIndex;
 	furniture?: FurnitureData;
+	vegetation?: VegetationData;
 }
 
 /** Fetch the scenery package (index + whichever layers it declares). */
@@ -28,6 +31,15 @@ export async function fetchScenery(baseUrl: string): Promise<LoadedScenery> {
 			loaded.furniture = data;
 		} else {
 			console.warn(`scenery furniture: HTTP ${res.status}`);
+		}
+	}
+
+	if (index.vegetation) {
+		const res = await fetch(`${dir}/${index.vegetation.file}`);
+		if (res.ok) {
+			loaded.vegetation = parseVegetation(await res.arrayBuffer());
+		} else {
+			console.warn(`scenery vegetation: HTTP ${res.status}`);
 		}
 	}
 

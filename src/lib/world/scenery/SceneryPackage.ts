@@ -19,6 +19,19 @@ export interface FurnitureData {
 	rails: Array<Array<{ x: number; y: number; z: number }>>;
 }
 
+/** Packed tree instances: `[u32 count][f32 (x, y, z, scale, ry) * count]`. */
+export interface VegetationData {
+	count: number;
+	/** Flat `x, y, z, scale, ry` per instance. */
+	instances: Float32Array;
+}
+
+export function parseVegetation(buf: ArrayBuffer): VegetationData {
+	const count = new Uint32Array(buf, 0, 1)[0];
+	const instances = new Float32Array(buf, 4, count * 5);
+	return { count, instances };
+}
+
 function fail(msg: string): never {
 	throw new Error(`scenery: ${msg}`);
 }
