@@ -131,6 +131,8 @@ export class Motorcycle {
 	/** Relaxed longitudinal tyre force per wheel (first-order lag, §35) — for stability. */
 	private frontFxN = 0;
 	private rearFxN = 0;
+	/** Smoothed longitudinal acceleration, m/s² (+ accelerating) — drives weight transfer (M11). */
+	private longitudinalAccelMps2 = 0;
 
 	private environment: MotorcycleEnvironment = {
 		gradeFraction: 0,
@@ -227,7 +229,11 @@ export class Motorcycle {
 
 		const forwardHoriz = this.forwardHorizontal();
 		const speedAlong = dot(this.state.linearVelocityWorldMps, forwardHoriz);
+		// Smoothed longitudinal acceleration for the weight-transfer response (M11).
+		const rawAccel = (speedAlong - this.state.forwardSpeedMps) / dtS;
+		this.longitudinalAccelMps2 += (rawAccel - this.longitudinalAccelMps2) * Math.min(1, dtS / 0.08);
 		this.state.forwardSpeedMps = speedAlong;
+		this.state.longitudinalAccelMps2 = this.longitudinalAccelMps2;
 
 		// Powertrain: engine ← clutch/gearbox load ← rear wheel (real angular
 		// state). The drivetrain returns the torque delivered to the rear wheel.
@@ -249,6 +255,7 @@ export class Motorcycle {
 
 		this.frontCompressionM = this.updateWheel('front', this.front, dtS);
 		this.rearCompressionM = this.updateWheel('rear', this.rear, dtS);
+		this.applyPitchResponse();
 
 		// Rider control first — it sets the steering angle and the cornering
 		// (lateral) demand that the tyre model then realises within the grip limit.
@@ -260,6 +267,35 @@ export class Motorcycle {
 	private forwardHorizontal(): Vec3 {
 		const forwardWorld = this.rig.localDirToWorld(FORWARD_LOCAL);
 		return normalize({ x: forwardWorld.x, y: 0, z: forwardWorld.z });
+	}
+
+	/**
+	 * Longitudinal weight transfer (MOTORCYCLE-PHYSICS.md §27, §50). A pitch
+	 * moment M ≈ m·a_x·h drives the chassis nose-down under braking / tail-down
+	 * under acceleration; the front/rear suspension then redistributes the axle
+	 * load by ≈ m·a_x·h/L, so `state.*NormalLoadN` (from the raycast suspension)
+	 * already reflects the transfer and feeds the tyre grip limit. The moment is
+	 * clamped so a hard stop dives rather than flips (stoppie / wheelie limiting
+	 * is M12), and pitch-rate damped.
+	 */
+	private applyPitchResponse(): void {
+		const bodyRightWorld = this.rig.localDirToWorld({ x: 1, y: 0, z: 0 });
+		const pitchRateRadS = dot(this.state.angularVelocityWorldRadS, bodyRightWorld);
+
+		const geometricMomentNm = -this.massKg * this.longitudinalAccelMps2 * this.geometry.cgHeightM;
+		let pitchMomentNm = clamp(geometricMomentNm, -2800, 2800) - 1500 * pitchRateRadS;
+
+		// Constrain the unstable extreme (endo / wheelie): a stiff progressive
+		// restoring torque past ~9° of pitch so a hard stop dives rather than
+		// flips (§59). A proper stoppie/wheelie limiter is M12.
+		const pitchTrimRad = 0.0165; // static nose-down from the softer front spring
+		const pitchExcess = this.state.pitchRad - pitchTrimRad;
+		const softLimitRad = 0.16;
+		if (Math.abs(pitchExcess) > softLimitRad) {
+			pitchMomentNm -= 28_000 * (pitchExcess - Math.sign(pitchExcess) * softLimitRad);
+		}
+
+		this.rig.addTorqueWorld(scale(bodyRightWorld, pitchMomentNm));
 	}
 
 	/**

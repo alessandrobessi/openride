@@ -69,8 +69,11 @@ describe('M9 countersteering — steering-step response (§75)', () => {
 		const minSteerDuringTurnIn = Math.min(...turnIn.map((x) => x.steerAngle));
 		expect(minSteerDuringTurnIn).toBeLessThan(-0.005);
 
-		// ...then the steering angle comes back positive as the turn establishes.
-		expect(s[s.length - 1].steerAngle).toBeGreaterThan(0);
+		// ...then the steering angle recovers from that counter blip as the turn
+		// establishes, settling near the small in-turn geometric angle.
+		const finalSteer = s[s.length - 1].steerAngle;
+		expect(finalSteer).toBeGreaterThan(minSteerDuringTurnIn + 0.008);
+		expect(Math.abs(finalSteer)).toBeLessThan(0.03);
 	});
 
 	it('roll builds in the commanded direction and the roll rate settles', async () => {

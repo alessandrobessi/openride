@@ -110,18 +110,19 @@ describe('M6 clutch + gearbox (headless)', () => {
 				sampled = Math.max(sampled, m.state.driveForceN);
 			}
 		});
-		// First gear has far more torque than grip: from M10 the rear tractive
-		// force is limited to ≈ µ·F_zr ≈ 1.15 · 1490 ≈ 1710 N (static rear load,
-		// no weight transfer yet). It is traction-limited, as a real bike is.
+		// First gear has far more torque than grip, so it is traction-limited: the
+		// rear tractive force sits near µ·F_zr. With M11 weight transfer loading
+		// the rear under acceleration, F_zr rises above its static value, so the
+		// limit is somewhat above µ·(static rear load).
 		const geo = ADVENTURE_1200.physical.geometry;
 		const rearStaticFraction = (geo.wheelbaseM - geo.cgFromRearAxleM) / geo.wheelbaseM; // ≈ 0.46
-		const rearGripLimitN =
+		const rearGripLimitStaticN =
 			DRY_ASPHALT.muLongitudinal *
 			ADVENTURE_1200.physical.mass.totalKg *
 			9.80665 *
 			rearStaticFraction;
-		expect(sampled).toBeGreaterThan(rearGripLimitN * 0.8);
-		expect(sampled).toBeLessThan(rearGripLimitN * 1.25);
+		expect(sampled).toBeGreaterThan(rearGripLimitStaticN * 0.8);
+		expect(sampled).toBeLessThan(rearGripLimitStaticN * 1.7); // + acceleration load transfer
 		rig.world.dispose();
 	});
 });

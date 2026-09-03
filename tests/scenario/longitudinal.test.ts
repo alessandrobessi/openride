@@ -107,9 +107,10 @@ describe('M4 longitudinal dynamics (headless)', () => {
 			durationS: 3
 		});
 		const decel = (speeds[0].v - finalV) / (speeds[speeds.length - 1].t - speeds[0].t);
-		// Front-only braking is limited to ≈ µ·F_zf (static load — no weight
-		// transfer yet): a few m/s², not the M4 grip-unlimited stop.
-		expect(decel).toBeGreaterThan(4);
-		expect(decel).toBeLessThan(8);
+		// Grip-limited, but with M11 weight transfer loading the front the
+		// deceleration reaches the ADVENTURE-1200 §21 hard-braking band (~8–10
+		// m/s²) rather than the static-load-only ~6.
+		expect(decel).toBeGreaterThan(6);
+		expect(decel).toBeLessThan(11.3); // < µ·g
 	});
 });

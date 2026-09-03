@@ -27,6 +27,8 @@ export interface MotorcycleState {
 	targetLeanRad: number;
 	/** Signed forward ground speed along the horizontal heading, m/s (derived). */
 	forwardSpeedMps: number;
+	/** Smoothed longitudinal acceleration, m/s² (+ = accelerating, − = braking). */
+	longitudinalAccelMps2: number;
 	/** Road gradient at the contact, radians (derived; + = uphill ahead). */
 	roadGradientRad: number;
 
@@ -81,6 +83,7 @@ export function createMotorcycleState(): MotorcycleState {
 		yawRateRadS: 0,
 		targetLeanRad: 0,
 		forwardSpeedMps: 0,
+		longitudinalAccelMps2: 0,
 		roadGradientRad: 0,
 
 		throttle: 0,
