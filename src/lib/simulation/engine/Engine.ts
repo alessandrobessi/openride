@@ -106,6 +106,21 @@ export class Engine {
 	}
 
 	/**
+	 * Net torque the engine would put on the crank this step with **no** external
+	 * (clutch) load: `T_combustion + T_idle − T_friction`, at the current ω and
+	 * lagged throttle. The drivetrain lock-up solve needs this to predict how far
+	 * the engine would run ahead of the driveline before the clutch reacts.
+	 */
+	currentFreeTorqueNm(): number {
+		const rpm = this.rpm;
+		const friction = this.frictionTorqueNm();
+		if (this.stalled) return -friction;
+		const combustion =
+			this.throttleActual * interpolateTorqueNm(this.curve, rpm) * this.limiterMultiplier(rpm);
+		return combustion + this.idleGovernorTorqueNm(rpm, friction) - friction;
+	}
+
+	/**
 	 * Soft rev limiter (§18): a linear combustion-torque cut from `redlineRPM` to
 	 * `limiterRPM`, fully zero above. Ramping the cut rather than hard-clamping ω
 	 * avoids injecting non-physical energy.

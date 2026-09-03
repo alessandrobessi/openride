@@ -108,8 +108,11 @@ describe('M16 rideable Stelvio road mesh (headless)', () => {
 			loop.advance(RENDER_FRAME_S, (dt) => {
 				const st = rig.motorcycle.state;
 				rig.motorcycle.setControls({
+					// Enough throttle to hold speed up the steepening climb now that
+					// the locked clutch feeds real engine braking back through the
+					// driveline on a trailing throttle (§21).
 					...NEUTRAL,
-					throttle: 0.28,
+					throttle: 0.34,
 					clutch: 1,
 					steeringInput: pursuitSteer(st.positionWorldM, st.yawRad)
 				});

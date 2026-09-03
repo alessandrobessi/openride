@@ -10,8 +10,12 @@ describe('clutchTransferTorqueNm', () => {
 	});
 
 	it('is k_c · Δω while below the engagement-scaled capacity', () => {
-		// small slip, fully engaged: linear region
-		expect(clutchTransferTorqueNm(1, 3, clutch)).toBeCloseTo(clutch.stiffnessNmPerRadS * 3, 6);
+		// small slip, fully engaged: linear region (|Δω| < T_max / k_c)
+		const smallSlip = 0.5 * (clutch.maxTorqueNm / clutch.stiffnessNmPerRadS);
+		expect(clutchTransferTorqueNm(1, smallSlip, clutch)).toBeCloseTo(
+			clutch.stiffnessNmPerRadS * smallSlip,
+			6
+		);
 	});
 
 	it('saturates at u_c · T_max for large slip', () => {

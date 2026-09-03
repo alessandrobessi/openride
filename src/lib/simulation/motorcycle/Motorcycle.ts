@@ -191,7 +191,7 @@ export class Motorcycle {
 			config.powertrain.torqueCurve,
 			config.physical.inertia.engineKgM2
 		);
-		this.drivetrain = new Drivetrain(config.powertrain);
+		this.drivetrain = new Drivetrain(config.powertrain, config.physical.inertia);
 		this.tires = config.chassis.tires;
 		this.balanceController = new BalanceController(
 			rider.balance,
@@ -278,7 +278,9 @@ export class Motorcycle {
 		const drive = this.drivetrain.solve(
 			this.engine.omegaRadS,
 			this.rearWheelOmegaRadS,
-			this.state.clutch
+			this.state.clutch,
+			dtS,
+			{ engineFreeTorqueNm: this.engine.currentFreeTorqueNm() }
 		);
 		// Traction control trims the throttle request when the rear is spinning
 		// (using last step's slip). Acts on torque, not speed (§57).

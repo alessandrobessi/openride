@@ -90,8 +90,15 @@ export const ADVENTURE_1200: MotorcycleConfig = {
 			shiftCutTimeS: 0.08
 		},
 		clutch: {
-			maxTorqueNm: 180,
-			stiffnessNmPerRadS: 12
+			// Slip-torque capacity ~1.6× peak engine torque — a hard launch slips it
+			// briefly, then it bites (§21).
+			maxTorqueNm: 200,
+			// Engagement stiffness. The drivetrain solves the k_c·Δω law implicitly
+			// (Drivetrain lock-up solve), so this is set stiff enough that an engaged
+			// clutch genuinely locks the engine to the driveline rather than riding
+			// on permanent slip — the old value of 12 was a workaround for an
+			// explicit integration that diverged in the low gears.
+			stiffnessNmPerRadS: 200
 		}
 	},
 

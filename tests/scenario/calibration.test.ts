@@ -182,6 +182,25 @@ describe('v0.1 calibration', () => {
 		rig.world.dispose();
 	});
 
-	it.todo('0–100 km/h in ~3.5–4.5 s (needs the powertrain-coupling pass)');
+	it('accelerates 0–100 km/h in about 3.5–5 s (emergent, assists off)', async () => {
+		const { rig, step } = await makeRig();
+		const box = makeAutoBox();
+		// Blip to a launch-ready idle, drop into first, then pin it. `t` here is
+		// real sim time (the step helper passes the outer clock), so the timing
+		// is measured directly rather than inferred.
+		step(0.6, (m) => m.setControls({ ...NEUTRAL, throttle: 0.7 }));
+		rig.motorcycle.selectGear(1);
+		const tStart = 0.6 + 1.2; // makeRig already ran 1.2 s of neutral
+		let t100 = Infinity;
+		step(8, (m, t) => {
+			box(m, t);
+			m.setControls({ ...NEUTRAL, throttle: 1, clutch: Math.min(1, (t - tStart) / 0.3) });
+			if (m.state.forwardSpeedMps * 3.6 >= 100 && t - tStart < t100) t100 = t - tStart;
+		});
+		expect(t100).toBeGreaterThan(3.2); // a physical launch, not teleporting
+		expect(t100).toBeLessThan(5);
+		rig.world.dispose();
+	});
+
 	it.todo('steady corner lean within ~2° of atan(v²/rg) (needs the camber/slip lateral model)');
 });
