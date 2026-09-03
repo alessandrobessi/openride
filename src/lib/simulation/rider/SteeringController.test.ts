@@ -5,7 +5,7 @@ import { ADVENTURE_1200 } from '../motorcycle/configs/adventure-1200';
 
 const geo = ADVENTURE_1200.physical.geometry;
 const make = () => new SteeringController(DEFAULT_RIDER, geo.wheelbaseM, geo.maxLeanAngleRad);
-// A large dt lets the slew-limited target reach its commanded value in one call.
+// A large dt lets the slew-limited lean target reach its commanded value at once.
 const SETTLE_DT = 100;
 
 describe('SteeringController', () => {
@@ -19,17 +19,27 @@ describe('SteeringController', () => {
 		expect(make().command(1, 0, SETTLE_DT).targetLeanRad).toBeCloseTo(0, 3);
 	});
 
-	it('leans into the turn, more at higher lateral-accel demand', () => {
-		const half = make().command(0.5, 20, SETTLE_DT).targetLeanRad;
-		const full = make().command(1, 20, SETTLE_DT).targetLeanRad;
-		expect(full).toBeGreaterThan(half);
-		expect(full).toBeGreaterThan(0);
-		expect(full).toBeLessThanOrEqual(geo.maxLeanAngleRad + 1e-9);
+	it('derives more lean at higher speed for the same turn intention (M8)', () => {
+		const slow = make().command(0.6, 8, SETTLE_DT).targetLeanRad;
+		const fast = make().command(0.6, 20, SETTLE_DT).targetLeanRad;
+		expect(fast).toBeGreaterThan(slow);
+	});
+
+	it('derives more lean as the turn tightens at a fixed speed', () => {
+		const gentle = make().command(0.3, 15, SETTLE_DT).targetLeanRad;
+		const hard = make().command(0.9, 15, SETTLE_DT).targetLeanRad;
+		expect(hard).toBeGreaterThan(gentle);
+	});
+
+	it('caps lean at the hard limit and lateral accel at the rider limit', () => {
+		const c = make().command(1, 40, SETTLE_DT);
+		expect(c.targetLeanRad).toBeLessThanOrEqual(geo.maxLeanAngleRad + 1e-9);
+		const ay = 40 * c.targetYawRateRadS;
+		expect(Math.abs(ay)).toBeLessThanOrEqual(DEFAULT_RIDER.maxTargetLateralAccelerationMps2 + 1e-6);
 	});
 
 	it('slew-limits the target lean so a step input ramps in', () => {
-		const sc = make();
-		const afterOneStep = sc.command(1, 20, 1 / 120).targetLeanRad;
+		const afterOneStep = make().command(1, 20, 1 / 120).targetLeanRad;
 		expect(afterOneStep).toBeGreaterThan(0);
 		expect(afterOneStep).toBeLessThan(0.02); // ~0.9 rad/s · (1/120) s
 	});
@@ -39,11 +49,5 @@ describe('SteeringController', () => {
 		const right = make().command(0.6, 15, SETTLE_DT);
 		expect(Math.sign(left.targetLeanRad)).toBe(-Math.sign(right.targetLeanRad));
 		expect(Math.sign(left.targetYawRateRadS)).toBe(-Math.sign(right.targetYawRateRadS));
-	});
-
-	it('yaw rate for a fixed lean falls off as speed rises (ψ̇ = g·tanφ / v)', () => {
-		const slow = make().command(1, 8, SETTLE_DT).targetYawRateRadS;
-		const fast = make().command(1, 25, SETTLE_DT).targetYawRateRadS;
-		expect(Math.abs(fast)).toBeLessThan(Math.abs(slow));
 	});
 });

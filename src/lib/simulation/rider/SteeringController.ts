@@ -1,18 +1,25 @@
 import { clamp, smoothstep } from '../core/math';
-import { GRAVITY_MPS2 } from '../core/constants';
+import { leanFromLateralAccelRad } from './leanModel';
 import type { RiderProfile } from './RiderProfile';
 
 /**
- * Turns the rider's turn intention `u_s ∈ [−1, 1]` into a target lean and a yaw
- * command (MOTORCYCLE-PHYSICS.md §40–43).
+ * Turns the rider's turn intention `u_s ∈ [−1, 1]` into a curvature (yaw-rate)
+ * command and a *derived* target lean (MOTORCYCLE-PHYSICS.md §37–43).
  *
- *   a_y,target = u_s · a_y,max · f(v)          (no cornering at a standstill)
- *   φ_target   = atan(a_y,target / g)          (§37)
- *   ψ̇_target  = blend( direct low-speed steer , g·tan φ / v )   (§41, §45)
+ *   ψ̇_target  = u_s · k, capped so |a_y| = |v·ψ̇| ≤ a_y,max; blended with a
+ *               direct parking-speed steer at low speed (§45)
+ *   a_y,target = v · ψ̇_target
+ *   φ_target   = atan(a_y,target / g)               (§37, §43)
  *
- * **M7 scope**: the yaw command is realised by a first-order yaw-rate tracking
- * torque — "arcade-ish" steering that M9 replaces with a countersteering torque
- * acting through the front contact. Marked accordingly.
+ * Because the lean target is derived from `v · ψ̇`, the same turn intention
+ * produces more lean at higher speed and more lean as the radius tightens —
+ * lean varies naturally with speed and corner radius (M8). The target is
+ * slew-rate-limited so a step input cannot snap the bike over.
+ *
+ * **Still M7-provisional**: the yaw command is realised by a yaw-rate tracking
+ * torque + a provisional cornering force; M9 replaces that with a
+ * countersteering steer torque acting through the front contact, and M10 adds
+ * real tyre lateral forces.
  */
 export interface SteeringCommand {
 	targetLeanRad: number;
@@ -21,16 +28,17 @@ export interface SteeringCommand {
 	steeringAngleRad: number;
 }
 
+/** Curvature demand at full intention, rad/s (before the lateral-accel cap). */
+const TURN_INTENT_YAW_GAIN = 0.55;
 const LOW_SPEED_YAW_GAIN = 1.2; // rad/s per unit u_s at parking speed
 const MIN_CORNER_SPEED_MPS = 1.0;
-/** How fast the rider is willing to roll the bike into / out of lean, rad/s. */
+/** How fast the rider rolls the bike into / out of lean, rad/s. */
 const MAX_LEAN_RATE_RAD_S = 0.9;
 
 export class SteeringController {
 	private readonly profile: RiderProfile;
 	private readonly wheelbaseM: number;
 	private readonly maxLeanRad: number;
-	/** Slew-limited target lean so a step input does not snap the bike over. */
 	private currentTargetLeanRad = 0;
 
 	constructor(profile: RiderProfile, wheelbaseM: number, maxLeanRad: number) {
@@ -42,41 +50,44 @@ export class SteeringController {
 	command(turnIntention: number, speedMps: number, dtS: number): SteeringCommand {
 		const us = clamp(turnIntention, -1, 1);
 		const speed = Math.abs(speedMps);
+		const ayMax = this.profile.maxTargetLateralAccelerationMps2;
 
-		// Lateral-accel demand ramps in from a standstill.
-		const cornerReady = smoothstep(0.5, 4, speed);
-		const ayTarget = us * this.profile.maxTargetLateralAccelerationMps2 * cornerReady;
+		// Curvature demand, capped so lateral acceleration stays within the rider's
+		// limit (this is what stops a full-lock input from spinning at low speed).
+		const yawRateCap = ayMax / Math.max(speed, MIN_CORNER_SPEED_MPS);
+		let targetYawRateRadS = clamp(us * TURN_INTENT_YAW_GAIN, -yawRateCap, yawRateCap);
+
+		// Low speed: blend toward direct (parking-lot) steering (§45).
+		const highSpeedBlend = smoothstep(
+			this.profile.steering.lowSpeedTransitionStartMps,
+			this.profile.steering.lowSpeedTransitionEndMps,
+			speed
+		);
+		targetYawRateRadS =
+			(1 - highSpeedBlend) * (us * LOW_SPEED_YAW_GAIN) + highSpeedBlend * targetYawRateRadS;
+
+		// Target lean DERIVED from the cornering demand — varies with speed/radius.
+		const ayTarget = speed * targetYawRateRadS;
 		const commandedLeanRad = clamp(
-			Math.atan(ayTarget / GRAVITY_MPS2),
+			leanFromLateralAccelRad(ayTarget),
 			-this.maxLeanRad,
 			this.maxLeanRad
 		);
-		// Slew toward it — the rider leans the bike over at a finite rate.
 		const maxStep = MAX_LEAN_RATE_RAD_S * dtS;
 		this.currentTargetLeanRad += clamp(
 			commandedLeanRad - this.currentTargetLeanRad,
 			-maxStep,
 			maxStep
 		);
-		const targetLeanRad = this.currentTargetLeanRad;
 
-		// Low speed: direct steering. High speed: yaw follows lean (steady corner).
-		const highSpeedBlend = smoothstep(
-			this.profile.steering.lowSpeedTransitionStartMps,
-			this.profile.steering.lowSpeedTransitionEndMps,
-			speed
-		);
-		const directYawRate = us * LOW_SPEED_YAW_GAIN;
-		const leanLedYawRate =
-			(GRAVITY_MPS2 * Math.tan(targetLeanRad)) / Math.max(speed, MIN_CORNER_SPEED_MPS);
-		const targetYawRateRadS =
-			(1 - highSpeedBlend) * directYawRate + highSpeedBlend * leanLedYawRate;
-
-		// Bicycle-model steering angle for the geometry it implies (telemetry only).
 		const steeringAngleRad = Math.atan(
 			(targetYawRateRadS * this.wheelbaseM) / Math.max(speed, 0.5)
 		);
 
-		return { targetLeanRad, targetYawRateRadS, steeringAngleRad };
+		return {
+			targetLeanRad: this.currentTargetLeanRad,
+			targetYawRateRadS,
+			steeringAngleRad
+		};
 	}
 }
