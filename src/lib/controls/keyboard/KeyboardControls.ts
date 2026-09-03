@@ -27,6 +27,7 @@ export interface KeyboardHandlers {
 	restartEngine: () => void;
 	toggleAssist: (assist: 'abs' | 'tractionControl' | 'wheelieControl') => void;
 	toggleView: () => void;
+	shiftTimeOfDay: (deltaHours: number) => void;
 }
 
 export type EdgeAction =
@@ -34,7 +35,8 @@ export type EdgeAction =
 	| { kind: 'shiftDown' }
 	| { kind: 'restart' }
 	| { kind: 'toggleAssist'; assist: 'abs' | 'tractionControl' | 'wheelieControl' }
-	| { kind: 'toggleView' };
+	| { kind: 'toggleView' }
+	| { kind: 'shiftTimeOfDay'; deltaHours: number };
 
 /** Full-press action for a key, or null if the key only affects the analog state. */
 export function edgeActionForKey(key: string): EdgeAction | null {
@@ -53,6 +55,10 @@ export function edgeActionForKey(key: string): EdgeAction | null {
 			return { kind: 'toggleAssist', assist: 'wheelieControl' };
 		case 'v':
 			return { kind: 'toggleView' };
+		case '[':
+			return { kind: 'shiftTimeOfDay', deltaHours: -0.5 };
+		case ']':
+			return { kind: 'shiftTimeOfDay', deltaHours: 0.5 };
 		default:
 			return null;
 	}
@@ -129,5 +135,7 @@ function applyEdge(handlers: KeyboardHandlers, action: EdgeAction): void {
 			return handlers.toggleAssist(action.assist);
 		case 'toggleView':
 			return handlers.toggleView();
+		case 'shiftTimeOfDay':
+			return handlers.shiftTimeOfDay(action.deltaHours);
 	}
 }

@@ -28,7 +28,8 @@
 		lonDeg: 0,
 		activeChunks: 0,
 		chunkId: '—',
-		view: 'cockpit'
+		view: 'cockpit',
+		hour: 10
 	});
 	let frames = $state(0);
 	let startError = $state<string | null>(null);
@@ -58,7 +59,8 @@
 			shiftDown: () => viewport.shiftDown(),
 			restartEngine: () => viewport.restartEngine(),
 			toggleAssist: (a) => viewport.toggleAssist(a),
-			toggleView: () => viewport.toggleView()
+			toggleView: () => viewport.toggleView(),
+			shiftTimeOfDay: (d) => viewport.shiftTimeOfDay(d)
 		});
 
 		// Poll the gamepad each frame; it takes over once actually touched so a
@@ -125,14 +127,19 @@
 		<span>{stats.latDeg.toFixed(5)}, {stats.lonDeg.toFixed(5)}</span>
 		<span>chunks {stats.activeChunks} @ {stats.chunkId}</span>
 		<span>view {stats.view}</span>
+		<span
+			>{Math.floor(stats.hour).toString().padStart(2, '0')}:{Math.round((stats.hour % 1) * 60)
+				.toString()
+				.padStart(2, '0')}</span
+		>
 	</div>
 	{#if startError}
 		<pre class="error" data-testid="start-error">{startError}</pre>
 	{/if}
 	<div class="help">
 		Keyboard: W/↑ throttle · S/↓ brake · A/D steer · Shift/C clutch · Q/E gear · R restart · 1/2/3
-		ABS/TC/wheelie · V view — or a gamepad: RT/LT throttle+brake, left stick steer, LB clutch, RB
-		rear brake, A/B gear, Start restart, Back view
+		ABS/TC/wheelie · V view · [ ] time — or a gamepad: RT/LT throttle+brake, left stick steer, LB
+		clutch, RB rear brake, A/B gear, Start restart, Back view
 	</div>
 </div>
 

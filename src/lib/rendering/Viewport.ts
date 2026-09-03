@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RenderLoop, type RenderLoopFrame } from './RenderLoop';
 import { applyInterpolatedTransform } from './interpolate';
 import { createScene, type TestScene } from './scene/createScene';
-import { createLighting, type Lighting } from './lighting/createLighting';
+import { createSkyAndLighting, type SkyAndLighting } from './environment/createSkyAndLighting';
 import { createCamera, type InspectionCamera } from './camera/createCamera';
 import { createFirstPersonCamera, type FirstPersonCamera } from './camera/createFirstPersonCamera';
 import { createCockpit, type Cockpit } from './cockpit/createCockpit';
@@ -75,6 +75,7 @@ export interface ViewportStats {
 	activeChunks: number;
 	chunkId: string;
 	view: 'cockpit' | 'chase';
+	hour: number;
 }
 
 const FIXED_DT_S = 1 / 120;
@@ -91,7 +92,7 @@ export class Viewport {
 	readonly renderer: THREE.WebGLRenderer;
 	private readonly canvas: HTMLCanvasElement;
 	private readonly testScene: TestScene;
-	private readonly lighting: Lighting;
+	private readonly lighting: SkyAndLighting;
 	private readonly inspectionCamera: InspectionCamera;
 	private readonly fpCamera: FirstPersonCamera;
 	private readonly loop: RenderLoop;
@@ -146,9 +147,12 @@ export class Viewport {
 		this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 		this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+		// The physically-based sky (M28) needs tone mapping or it blows out.
+		this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		this.renderer.toneMappingExposure = 0.6;
 
 		this.testScene = createScene();
-		this.lighting = createLighting();
+		this.lighting = createSkyAndLighting(this.testScene.scene);
 		this.testScene.scene.add(this.lighting.group);
 
 		this.inspectionCamera = createCamera(canvas);
@@ -178,6 +182,11 @@ export class Viewport {
 	/** Gamepad analog clutch: 1 = engaged, 0 = pulled in. The value eases toward this. */
 	setClutchInput(value01: number): void {
 		this.clutchTarget = Number.isFinite(value01) ? Math.min(1, Math.max(0, value01)) : 1;
+	}
+
+	/** Shift the time of day (M28). */
+	shiftTimeOfDay(deltaHours: number): void {
+		this.lighting.setTimeOfDay(this.lighting.hour + deltaHours);
 	}
 
 	/** Start the procedural audio (engine + wind/road) — must be called from a user gesture. */
@@ -666,7 +675,8 @@ export class Viewport {
 				...this.geoFromChassis(),
 				activeChunks: this.streamStats.activeChunks,
 				chunkId: this.streamStats.chunkId,
-				view: this.viewMode
+				view: this.viewMode,
+				hour: this.lighting.hour
 			});
 		}
 	}

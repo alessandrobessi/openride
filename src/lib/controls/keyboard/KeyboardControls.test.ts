@@ -14,6 +14,8 @@ describe('keyboard map', () => {
 		expect(edgeActionForKey('2')).toEqual({ kind: 'toggleAssist', assist: 'tractionControl' });
 		expect(edgeActionForKey('3')).toEqual({ kind: 'toggleAssist', assist: 'wheelieControl' });
 		expect(edgeActionForKey('v')).toEqual({ kind: 'toggleView' });
+		expect(edgeActionForKey('[')).toEqual({ kind: 'shiftTimeOfDay', deltaHours: -0.5 });
+		expect(edgeActionForKey(']')).toEqual({ kind: 'shiftTimeOfDay', deltaHours: 0.5 });
 		expect(edgeActionForKey('w')).toBeNull();
 	});
 
