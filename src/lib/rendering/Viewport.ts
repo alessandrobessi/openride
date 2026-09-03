@@ -14,6 +14,7 @@ import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-120
 import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
 import { LocalFrame, STELVIO_ORIGIN } from '$lib/world/geo/enu';
 import { fetchRoadMesh, type LoadedRoadMesh } from '$lib/world/roads/loadRoadMesh';
+import { fetchTerrain, type LoadedTerrain } from '$lib/world/terrain/loadTerrain';
 import { asset } from '$lib/paths';
 
 /**
@@ -158,11 +159,22 @@ export class Viewport {
 		}
 		if (this.disposed) return;
 
+		let terrain: LoadedTerrain | undefined;
+		if (road) {
+			try {
+				terrain = await fetchTerrain(asset('worlds/stelvio/terrain'));
+			} catch (err) {
+				console.warn('Stelvio terrain package unavailable — road only:', err);
+			}
+		}
+		if (this.disposed) return;
+
 		let rig: MotorcycleRig;
 		if (road) {
 			const world = await RapierWorld.create();
 			world.addStaticGround(2000, 1, -40); // safety floor far below the road
 			world.addTrimeshCollider(road.collision.positions, road.collision.indices);
+			if (terrain) this.addTerrain(terrain, world);
 			rig = await createMotorcycleRig(ADVENTURE_1200, {
 				world,
 				withGround: false,
@@ -198,6 +210,72 @@ export class Viewport {
 		this.track(geom, mat);
 		// The flat test plane is just noise once we're on the real road.
 		this.testScene.ground.visible = false;
+	}
+
+	/**
+	 * Add DEM terrain (M17): one Rapier heightfield collider and one displaced
+	 * grid mesh per chunk, both from the same height grid so they never diverge.
+	 */
+	private addTerrain(terrain: LoadedTerrain, world: RapierWorld): void {
+		const group = new THREE.Group();
+		group.name = 'terrain';
+		const mat = new THREE.MeshStandardMaterial({
+			color: 0x6b7355,
+			roughness: 1,
+			flatShading: true
+		});
+		this.track(mat);
+
+		for (const meta of terrain.index.chunks) {
+			const chunk = terrain.chunks.get(meta.id);
+			if (!chunk) continue;
+			const g = chunk.gridSize;
+			const step = meta.sizeM / (g - 1);
+
+			world.addHeightfieldChunk(
+				g,
+				chunk.heights,
+				meta.sizeM,
+				meta.originX + meta.sizeM / 2,
+				meta.originZ + meta.sizeM / 2
+			);
+
+			const positions = new Float32Array(g * g * 3);
+			for (let r = 0; r < g; r++) {
+				for (let c = 0; c < g; c++) {
+					const i = (r * g + c) * 3;
+					positions[i] = meta.originX + c * step;
+					positions[i + 1] = chunk.heights[r * g + c];
+					positions[i + 2] = meta.originZ + r * step;
+				}
+			}
+			const indices = new Uint32Array((g - 1) * (g - 1) * 6);
+			let k = 0;
+			for (let r = 0; r < g - 1; r++) {
+				for (let c = 0; c < g - 1; c++) {
+					const a = r * g + c;
+					const b = a + 1;
+					const d = a + g;
+					const e = d + 1;
+					indices[k++] = a;
+					indices[k++] = d;
+					indices[k++] = b;
+					indices[k++] = b;
+					indices[k++] = d;
+					indices[k++] = e;
+				}
+			}
+			const geom = new THREE.BufferGeometry();
+			geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+			geom.setIndex(new THREE.BufferAttribute(indices, 1));
+			geom.computeVertexNormals();
+			const chunkMesh = new THREE.Mesh(geom, mat);
+			chunkMesh.name = `terrain-${meta.id}`;
+			group.add(chunkMesh);
+			this.track(geom);
+		}
+
+		this.testScene.scene.add(group);
 	}
 
 	stop(): void {

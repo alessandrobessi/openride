@@ -233,6 +233,34 @@ export class RapierWorld {
 		this.world.createCollider(RAPIER.ColliderDesc.trimesh(positions, indices));
 	}
 
+	/**
+	 * Add a static heightfield collider for one terrain chunk. `heights` is a
+	 * `gridSize × gridSize` row-major grid (row index = +z, col index = +x) of
+	 * local-y values; `chunkSizeM` is the edge length; `(centerX, centerZ)` is
+	 * the chunk centre in local metres.
+	 */
+	addHeightfieldChunk(
+		gridSize: number,
+		heights: Float32Array,
+		chunkSizeM: number,
+		centerX: number,
+		centerZ: number
+	): void {
+		const n = gridSize - 1; // rapier: (nrows+1)*(ncols+1) samples
+		// Rapier indexes column-major (i along x, j along z); our grid is
+		// row-major with row = z, col = x — transpose.
+		const t = new Float32Array(gridSize * gridSize);
+		for (let r = 0; r < gridSize; r++) {
+			for (let c = 0; c < gridSize; c++) t[c * gridSize + r] = heights[r * gridSize + c];
+		}
+		const desc = RAPIER.ColliderDesc.heightfield(n, n, t, {
+			x: chunkSizeM,
+			y: 1,
+			z: chunkSizeM
+		}).setTranslation(centerX, 0, centerZ);
+		this.world.createCollider(desc);
+	}
+
 	/** Advance the physics world by one fixed step of `dtS` seconds. */
 	step(dtS: number): void {
 		this.world.timestep = dtS;
