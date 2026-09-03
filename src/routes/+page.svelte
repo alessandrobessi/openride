@@ -1,3 +1,7 @@
+<script lang="ts">
+	import { base } from '$app/paths';
+</script>
+
 <svelte:head>
 	<title>OpenRide</title>
 	<meta
@@ -13,7 +17,8 @@
 		A browser-based, first-person, simulation-oriented motorcycle touring experience built from
 		real-world geographic data. The first ride is <strong>Passo dello Stelvio</strong>.
 	</p>
-	<p class="status">Status: bootstrap (M0). The cockpit is not wired up yet.</p>
+	<p><a href="{base}/ride">Open the test stage →</a></p>
+	<p class="status">Status: rendering scene (M1). No motorcycle or physics yet.</p>
 </main>
 
 <style>
@@ -46,6 +51,10 @@
 		font-size: 1.15rem;
 		color: #9fb2c4;
 		margin: 0 0 2rem;
+	}
+
+	a {
+		color: #6cc0ff;
 	}
 
 	.status {

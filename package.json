@@ -27,6 +27,7 @@
 		"@sveltejs/kit": "^2.15.1",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",
 		"@types/node": "^22.10.5",
+		"@types/three": "^0.171.0",
 		"eslint": "^9.17.0",
 		"eslint-config-prettier": "^9.1.0",
 		"eslint-plugin-svelte": "^2.46.1",
@@ -41,6 +42,11 @@
 		"vitest": "^3.0.5"
 	},
 	"pnpm": {
-		"onlyBuiltDependencies": ["esbuild"]
+		"onlyBuiltDependencies": [
+			"esbuild"
+		]
+	},
+	"dependencies": {
+		"three": "^0.171.0"
 	}
 }
