@@ -9,12 +9,9 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { STELVIO_BBOX } from '../bbox';
 
-/**
- * Extraction area (S, W, N, E). Covers the pass summit and the classic
- * north-east hairpin climb from Trafoi (~10.485 E) up to the Passo.
- */
-export const STELVIO_BBOX = { south: 46.5, west: 10.42, north: 46.545, east: 10.505 } as const;
+export { STELVIO_BBOX };
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const OUT = resolve(import.meta.dirname, '../data/stelvio.osm.json');

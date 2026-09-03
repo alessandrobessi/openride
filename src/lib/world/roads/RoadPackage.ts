@@ -29,6 +29,18 @@ export interface RoadTags {
 	oneway?: boolean;
 }
 
+/** Road elevation profile summary, added by the elevation pipeline (M15). */
+export interface RoadElevation {
+	source: string;
+	minM: number;
+	maxM: number;
+	startM: number;
+	endM: number;
+	totalClimbM: number;
+	maxGradePct: number;
+	sampledAt: string;
+}
+
 export interface RoadPackage {
 	id: string;
 	name: string;
@@ -40,6 +52,7 @@ export interface RoadPackage {
 	bounds: { minLatDeg: number; minLonDeg: number; maxLatDeg: number; maxLonDeg: number };
 	hairpinCount: number;
 	maxSegmentGapM: number;
+	elevation?: RoadElevation;
 	source: { file: string; wayIds: number[]; extractedAt: string };
 }
 
