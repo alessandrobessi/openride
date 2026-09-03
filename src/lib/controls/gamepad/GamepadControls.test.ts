@@ -40,12 +40,19 @@ describe('mapGamepad', () => {
 	});
 
 	it('left stick X steers, with a dead zone and optional inversion', () => {
-		expect(mapGamepad(reading({ axes: [0.05, 0, 0, 0] }), cfg).controls.steeringInput).toBe(0);
-		const right = mapGamepad(reading({ axes: [0.9, 0, 0, 0] }), cfg).controls.steeringInput;
-		expect(right).toBeGreaterThan(0);
+		expect(mapGamepad(reading({ axes: [0.05, 0, 0, 0] }), cfg).controls.steeringInput).toBeCloseTo(
+			0,
+			10
+		);
+		// Stick pushed right (+axis) → steer right. Positive steeringInput is left
+		// (rider-model convention), so a rightward push reads negative.
+		const pushRight = mapGamepad(reading({ axes: [0.9, 0, 0, 0] }), cfg).controls.steeringInput;
+		expect(pushRight).toBeLessThan(0);
+		const pushLeft = mapGamepad(reading({ axes: [-0.9, 0, 0, 0] }), cfg).controls.steeringInput;
+		expect(pushLeft).toBeGreaterThan(0);
 		const inverted = mapGamepad(reading({ axes: [0.9, 0, 0, 0] }), { ...cfg, invertSteer: true })
 			.controls.steeringInput;
-		expect(inverted).toBeCloseTo(-right, 6);
+		expect(inverted).toBeCloseTo(-pushRight, 6);
 	});
 
 	it('reports gear / restart / view button levels and an active flag', () => {
