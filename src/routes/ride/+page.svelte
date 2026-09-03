@@ -3,12 +3,12 @@
 	import { Viewport, type ViewportStats } from '$lib/rendering/Viewport';
 
 	let canvas: HTMLCanvasElement;
-	let stats = $state<ViewportStats>({ fps: 0, drawCalls: 0, triangles: 0 });
+	let stats = $state<ViewportStats>({ fps: 0, physicsHz: 0, drawCalls: 0, triangles: 0 });
 	let frames = $state(0);
 
 	onMount(() => {
 		const viewport = new Viewport(canvas);
-		viewport.start((s) => {
+		void viewport.start((s) => {
 			stats = s;
 			frames = viewport.frames;
 		});
@@ -24,6 +24,7 @@
 	<canvas bind:this={canvas} data-testid="viewport"></canvas>
 	<div class="hud" data-testid="render-stats" data-frames={frames}>
 		<span>{stats.fps.toFixed(0)} fps</span>
+		<span>{stats.physicsHz.toFixed(0)} Hz phys</span>
 		<span>{stats.drawCalls} draws</span>
 		<span>{stats.triangles.toLocaleString()} tris</span>
 	</div>
