@@ -12,6 +12,9 @@ import {
 } from './cockpit/instruments/InstrumentCluster';
 import { createEngineAudio, type EngineAudio } from '$lib/audio/engine/EngineAudio';
 import { engineAudioParams } from '$lib/audio/engine/engineAudioParams';
+import { createAmbientAudio, type AmbientAudio } from '$lib/audio/ambient/AmbientAudio';
+import { windAudioParams } from '$lib/audio/wind/windAudioParams';
+import { tireAudioParams, ASPHALT } from '$lib/audio/tires/tireAudioParams';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { RapierWorld, type Transform } from '$lib/simulation/physics/RapierWorld';
 import {
@@ -106,6 +109,9 @@ export class Viewport {
 	private cockpit: Cockpit | undefined;
 	private cluster: InstrumentCluster | undefined;
 	private readonly engineAudio: EngineAudio = createEngineAudio();
+	private readonly ambientAudio: AmbientAudio = createAmbientAudio();
+	private prevFrontComp = 0;
+	private prevRearComp = 0;
 	/** First-person cockpit is the default ride view (M20); 'chase' is the debug orbit cam. */
 	private viewMode: 'cockpit' | 'chase' = 'cockpit';
 	private frontContactMarker: THREE.Mesh | undefined;
@@ -165,9 +171,10 @@ export class Viewport {
 		this.clutchTarget = Number.isFinite(value01) ? Math.min(1, Math.max(0, value01)) : 1;
 	}
 
-	/** Start the procedural engine audio — must be called from a user gesture. */
+	/** Start the procedural audio (engine + wind/road) — must be called from a user gesture. */
 	resumeAudio(): void {
 		void this.engineAudio.resume();
+		void this.ambientAudio.resume();
 	}
 
 	shiftUp(): void {
@@ -394,6 +401,7 @@ export class Viewport {
 		this.terrainColliders.clear();
 		this.terrainMeshes.clear();
 		this.engineAudio.dispose();
+		this.ambientAudio.dispose();
 		this.fpCamera.dispose();
 		this.inspectionCamera.dispose();
 		this.lighting.dispose();
@@ -564,6 +572,30 @@ export class Viewport {
 						stalled: s.engineStalled
 					})
 				);
+			}
+
+			// Wind + road audio (M24): speed-driven beds plus suspension bump thumps.
+			{
+				const s = motorcycle.state;
+				this.ambientAudio.updateWind(windAudioParams(s.forwardSpeedMps));
+				this.ambientAudio.updateTire(
+					tireAudioParams({
+						speedMps: s.forwardSpeedMps,
+						surface: ASPHALT,
+						gripUtilization: Math.max(s.frontGripUtilization, s.rearGripUtilization)
+					})
+				);
+
+				const dt = frame.frameDeltaS > 0 ? frame.frameDeltaS : 1 / 60;
+				const compRate = Math.max(
+					(s.frontSuspensionCompressionM - this.prevFrontComp) / dt,
+					(s.rearSuspensionCompressionM - this.prevRearComp) / dt
+				);
+				this.prevFrontComp = s.frontSuspensionCompressionM;
+				this.prevRearComp = s.rearSuspensionCompressionM;
+				if (compRate > 0.35 && Math.abs(s.forwardSpeedMps) > 1.5) {
+					this.ambientAudio.bump(Math.min(1, (compRate - 0.35) / 0.9));
+				}
 			}
 		}
 
