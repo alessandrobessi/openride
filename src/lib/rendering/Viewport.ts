@@ -5,28 +5,32 @@ import { createScene, type TestScene } from './scene/createScene';
 import { createLighting, type Lighting } from './lighting/createLighting';
 import { createCamera, type InspectionCamera } from './camera/createCamera';
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
-import { RapierWorld, type Transform } from '$lib/simulation/physics/RapierWorld';
+import { type Transform } from '$lib/simulation/physics/RapierWorld';
+import {
+	createMotorcycleRig,
+	type MotorcycleRig
+} from '$lib/simulation/physics/createMotorcycleRig';
+import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
 
 /**
- * Owns the WebGL renderer, the test scene, the inspection camera, the
- * fixed-step simulation loop and the Rapier world, and keeps them sized to a
- * canvas element. Browser-only — construct from `onMount`, never during
- * SSR/prerender.
+ * Owns the WebGL renderer, the test scene, the inspection camera, the fixed-step
+ * simulation loop and the Rapier world. Browser-only — construct from
+ * `onMount`, never during SSR/prerender.
  *
  * Physics state is authoritative; rendering interpolates it (AGENTS.md §5, §6).
- * In M2 the only simulated object is a dynamic test box that falls onto the
- * static ground; M3 replaces it with the motorcycle rig.
+ * M3 shows the motorcycle rig as a debug view: a translucent chassis box with
+ * wheel discs, contact-point markers and a CG axis triad, resting on the ground.
  */
 export interface ViewportStats {
 	fps: number;
 	physicsHz: number;
 	drawCalls: number;
 	triangles: number;
+	frontLoadN: number;
+	rearLoadN: number;
 }
 
 const FIXED_DT_S = 1 / 120;
-const TEST_BOX_HALF = 0.5;
-const TEST_BOX_DROP_Y = 8;
 
 export class Viewport {
 	readonly renderer: THREE.WebGLRenderer;
@@ -38,11 +42,14 @@ export class Viewport {
 	private readonly resizeObserver: ResizeObserver;
 
 	private readonly simLoop = new SimulationLoop({ fixedDtS: FIXED_DT_S });
-	private physics: RapierWorld | undefined;
-	private testBox: THREE.Mesh | undefined;
-	private testBoxHandle = -1;
-	private prevTransform: Transform = identityTransform(TEST_BOX_DROP_Y);
-	private currTransform: Transform = identityTransform(TEST_BOX_DROP_Y);
+	private rig: MotorcycleRig | undefined;
+	private readonly disposables: Array<{ dispose: () => void }> = [];
+
+	private chassisMesh: THREE.Object3D | undefined;
+	private frontContactMarker: THREE.Mesh | undefined;
+	private rearContactMarker: THREE.Mesh | undefined;
+	private prevTransform: Transform = identityTransform();
+	private currTransform: Transform = identityTransform();
 
 	private frameCount = 0;
 	private disposed = false;
@@ -72,29 +79,19 @@ export class Viewport {
 		return this.frameCount;
 	}
 
-	/** Build the physics world and begin rendering. */
+	/** Build the physics world + motorcycle rig and begin rendering. */
 	async start(onStats?: (stats: ViewportStats) => void): Promise<void> {
 		this.onStats = onStats;
 
-		const physics = await RapierWorld.create();
+		const rig = await createMotorcycleRig(ADVENTURE_1200);
 		if (this.disposed) {
-			physics.dispose();
+			rig.world.dispose();
 			return;
 		}
-		physics.addStaticGround();
-		this.testBoxHandle = physics.addDynamicBox({
-			halfExtentsM: { x: TEST_BOX_HALF, y: TEST_BOX_HALF, z: TEST_BOX_HALF },
-			positionM: { x: 0, y: TEST_BOX_DROP_Y, z: 0 }
-		});
-		this.physics = physics;
-		this.prevTransform = physics.getTransform(this.testBoxHandle);
+		this.rig = rig;
+		this.buildDebugMotorcycle();
+		this.prevTransform = rig.world.getTransform(rig.chassisHandle);
 		this.currTransform = this.prevTransform;
-
-		const geometry = new THREE.BoxGeometry(TEST_BOX_HALF * 2, TEST_BOX_HALF * 2, TEST_BOX_HALF * 2);
-		const material = new THREE.MeshStandardMaterial({ color: 0x6cc0ff, roughness: 0.4 });
-		this.testBox = new THREE.Mesh(geometry, material);
-		this.testBox.name = 'test-box';
-		this.testScene.scene.add(this.testBox);
 
 		this.loop.start();
 	}
@@ -110,12 +107,69 @@ export class Viewport {
 		this.inspectionCamera.dispose();
 		this.lighting.dispose();
 		this.testScene.dispose();
-		if (this.testBox) {
-			this.testBox.geometry.dispose();
-			(this.testBox.material as THREE.Material).dispose();
-		}
-		this.physics?.dispose();
+		for (const d of this.disposables) d.dispose();
+		this.rig?.world.dispose();
 		this.renderer.dispose();
+	}
+
+	private buildDebugMotorcycle(): void {
+		const geo = ADVENTURE_1200.physical.geometry;
+		const group = new THREE.Group();
+		group.name = 'motorcycle-debug';
+
+		const bodyGeom = new THREE.BoxGeometry(0.7, 1.0, 2.1);
+		const bodyMat = new THREE.MeshStandardMaterial({
+			color: 0x6cc0ff,
+			transparent: true,
+			opacity: 0.35,
+			roughness: 0.5
+		});
+		group.add(new THREE.Mesh(bodyGeom, bodyMat));
+		this.track(bodyGeom, bodyMat);
+
+		const cg = new THREE.AxesHelper(0.5);
+		group.add(cg);
+		this.track(cg.geometry, cg.material as THREE.Material);
+
+		group.add(
+			this.wheelDisc(
+				geo.frontWheelRadiusM,
+				geo.wheelbaseM - geo.cgFromRearAxleM,
+				geo.frontWheelRadiusM - geo.cgHeightM
+			)
+		);
+		group.add(
+			this.wheelDisc(
+				geo.rearWheelRadiusM,
+				-geo.cgFromRearAxleM,
+				geo.rearWheelRadiusM - geo.cgHeightM,
+				true
+			)
+		);
+
+		this.testScene.scene.add(group);
+		this.chassisMesh = group;
+
+		const markerGeom = new THREE.SphereGeometry(0.05, 12, 12);
+		const markerMat = new THREE.MeshBasicMaterial({ color: 0xff5a4a });
+		this.frontContactMarker = new THREE.Mesh(markerGeom, markerMat);
+		this.rearContactMarker = new THREE.Mesh(markerGeom, markerMat);
+		this.testScene.scene.add(this.frontContactMarker, this.rearContactMarker);
+		this.track(markerGeom, markerMat);
+	}
+
+	private wheelDisc(radiusM: number, axleZ: number, centreY: number, rear = false): THREE.Mesh {
+		const g = new THREE.CylinderGeometry(radiusM, radiusM, 0.12, 28);
+		const m = new THREE.MeshStandardMaterial({ color: rear ? 0x9fe8b0 : 0xf0f0f0, roughness: 0.6 });
+		const mesh = new THREE.Mesh(g, m);
+		mesh.rotation.z = Math.PI / 2; // axle along body x
+		mesh.position.set(0, centreY, axleZ);
+		this.track(g, m);
+		return mesh;
+	}
+
+	private track(...items: Array<{ dispose: () => void }>): void {
+		this.disposables.push(...items);
 	}
 
 	private resize(): void {
@@ -126,13 +180,19 @@ export class Viewport {
 	}
 
 	private renderFrame(frame: RenderLoopFrame): void {
-		if (this.physics && this.testBox) {
+		if (this.rig && this.chassisMesh) {
+			const { motorcycle, world, chassisHandle } = this.rig;
 			const alpha = this.simLoop.advance(frame.frameDeltaS, (dtS) => {
 				this.prevTransform = this.currTransform;
-				this.physics!.step(dtS);
-				this.currTransform = this.physics!.getTransform(this.testBoxHandle);
+				motorcycle.update(dtS);
+				world.step(dtS);
+				this.currTransform = world.getTransform(chassisHandle);
 			});
-			applyInterpolatedTransform(this.testBox, this.prevTransform, this.currTransform, alpha);
+			applyInterpolatedTransform(this.chassisMesh, this.prevTransform, this.currTransform, alpha);
+			const fc = motorcycle.debug.frontContactWorldM;
+			const rc = motorcycle.debug.rearContactWorldM;
+			this.frontContactMarker?.position.set(fc.x, fc.y, fc.z);
+			this.rearContactMarker?.position.set(rc.x, rc.y, rc.z);
 		}
 
 		this.inspectionCamera.update();
@@ -144,12 +204,14 @@ export class Viewport {
 				fps: this.loop.fps,
 				physicsHz: 1 / FIXED_DT_S,
 				drawCalls: this.renderer.info.render.calls,
-				triangles: this.renderer.info.render.triangles
+				triangles: this.renderer.info.render.triangles,
+				frontLoadN: this.rig?.motorcycle.state.frontNormalLoadN ?? 0,
+				rearLoadN: this.rig?.motorcycle.state.rearNormalLoadN ?? 0
 			});
 		}
 	}
 }
 
-function identityTransform(y: number): Transform {
-	return { position: { x: 0, y, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+function identityTransform(): Transform {
+	return { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
 }

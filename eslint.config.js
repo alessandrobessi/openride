@@ -22,6 +22,35 @@ export default ts.config(
 		}
 	},
 	{
+		// Headless-first simulation core (plan): everything under simulation/ except
+		// simulation/physics/ must compute forces from state + config only — no
+		// Three.js, no Rapier, no SvelteKit, no rendering imports — so it runs in
+		// Node tests.
+		files: ['src/lib/simulation/**/*.ts'],
+		ignores: ['src/lib/simulation/physics/**'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					paths: [
+						{ name: 'three', message: 'Keep Three.js in rendering/; simulation/* is headless.' },
+						{
+							name: '@dimforge/rapier3d-compat',
+							message: 'Only simulation/physics/* may import Rapier.'
+						}
+					],
+					patterns: [
+						{
+							group: ['three/*', '$app/*', '$lib/rendering/*', '$lib/simulation/physics/*'],
+							message:
+								'simulation/* (non-physics) must not depend on Rapier, Three.js, SvelteKit or rendering.'
+						}
+					]
+				}
+			]
+		}
+	},
+	{
 		ignores: [
 			'build/',
 			'.svelte-kit/',

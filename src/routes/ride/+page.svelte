@@ -3,7 +3,14 @@
 	import { Viewport, type ViewportStats } from '$lib/rendering/Viewport';
 
 	let canvas: HTMLCanvasElement;
-	let stats = $state<ViewportStats>({ fps: 0, physicsHz: 0, drawCalls: 0, triangles: 0 });
+	let stats = $state<ViewportStats>({
+		fps: 0,
+		physicsHz: 0,
+		drawCalls: 0,
+		triangles: 0,
+		frontLoadN: 0,
+		rearLoadN: 0
+	});
 	let frames = $state(0);
 
 	onMount(() => {
@@ -27,6 +34,8 @@
 		<span>{stats.physicsHz.toFixed(0)} Hz phys</span>
 		<span>{stats.drawCalls} draws</span>
 		<span>{stats.triangles.toLocaleString()} tris</span>
+		<span>Fz f {(stats.frontLoadN / 1000).toFixed(2)} kN</span>
+		<span>Fz r {(stats.rearLoadN / 1000).toFixed(2)} kN</span>
 	</div>
 </div>
 
