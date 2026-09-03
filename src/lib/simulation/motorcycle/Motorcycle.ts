@@ -7,7 +7,8 @@ import { brakeForcesN } from '../brakes/brakes';
 import { Drivetrain } from '../drivetrain/Drivetrain';
 import { BalanceController } from '../rider/BalanceController';
 import { SteeringController } from '../rider/SteeringController';
-import type { RiderProfile } from '../rider/RiderProfile';
+import { countersteer } from '../rider/countersteer';
+import type { RiderProfile, RiderSteeringProfile } from '../rider/RiderProfile';
 import { GRAVITY_MPS2 } from '../core/constants';
 import { gradientForces } from '../world/gradient';
 import { DRY_ASPHALT, type SurfacePhysics } from '../world/surface';
@@ -68,9 +69,10 @@ const UP_WORLD: Vec3 = { x: 0, y: 1, z: 0 };
 const FORWARD_LOCAL: Vec3 = { x: 0, y: 0, z: 1 };
 const RAY_SLACK_M = 0.35;
 
-// TEMP until M9: yaw-rate tracking torque that realises the steering command
-// directly instead of through a countersteering steer torque + tyre forces.
-const YAW_TRACK_TIME_S = 0.22;
+// Yaw-rate tracker time constant: soft, so heading lags the lean (turn-in is
+// not instantaneous). Real front-contact steer geometry + tyre forces (M10)
+// will let this go away.
+const YAW_TRACK_TIME_S = 0.45;
 
 /** Below this speed, velocity-opposing forces (drag, rolling resistance, brakes) are gated off. */
 const SPEED_DEADBAND_MPS = 0.03;
@@ -105,6 +107,7 @@ export class Motorcycle {
 	private readonly yawInertiaKgM2: number;
 	private readonly balanceController: BalanceController;
 	private readonly steeringController: SteeringController;
+	private readonly riderSteering: RiderSteeringProfile;
 
 	private environment: MotorcycleEnvironment = {
 		gradeFraction: 0,
@@ -147,6 +150,7 @@ export class Motorcycle {
 			this.massKg * GRAVITY_MPS2 * geo.cgHeightM
 		);
 		this.steeringController = new SteeringController(rider, geo.wheelbaseM, geo.maxLeanAngleRad);
+		this.riderSteering = rider.steering;
 
 		this.zeroCompressionReachM = geo.cgHeightM;
 		this.front = {
@@ -327,10 +331,13 @@ export class Motorcycle {
 
 	/**
 	 * Virtual-rider control (MOTORCYCLE-PHYSICS.md §43–46):
-	 * 1. steering command  u_s → target lean + target yaw rate;
-	 * 2. balance controller → roll-axis torque toward the target lean, scaled
-	 *    down with speed;
-	 * 3. TEMP (until M9): a first-order yaw-rate tracker realises the turn.
+	 * 1. steering command  u_s → target lean (+ a reference yaw rate);
+	 * 2. balance controller → roll-axis torque toward the target lean, plus a
+	 *    countersteer feed-forward that crisps up turn-in and fades as the lean
+	 *    settles (§44);
+	 * 3. yaw follows the *actual* lean at speed (ψ̇ = g·tan φ / v), blended with
+	 *    direct steering only at parking speed (§41, §45) — turning is no longer
+	 *    a directly-imposed yaw rate (AGENTS.md §13).
 	 */
 	private applyRiderControl(speedMps: number, dtS: number): void {
 		const forwardWorld = this.rig.localDirToWorld(FORWARD_LOCAL);
@@ -342,19 +349,44 @@ export class Motorcycle {
 
 		const cmd = this.steeringController.command(this.state.steeringInput, speedMps, dtS);
 		this.state.targetLeanRad = cmd.targetLeanRad;
-		this.state.steeringAngleRad = cmd.steeringAngleRad;
 
-		const rollTorqueNm = this.balanceController.torqueNm(
+		const cs = countersteer({
+			leanRad: this.state.rollRad,
+			leanRateRadS: rollRateRadS,
+			targetLeanRad: cmd.targetLeanRad,
+			speedMps,
+			profile: this.riderSteering
+		});
+
+		const balanceNm = this.balanceController.torqueNm(
 			this.state.rollRad,
 			rollRateRadS,
 			cmd.targetLeanRad,
 			speedMps
 		);
-		this.rig.addTorqueWorld(scale(forwardWorld, rollTorqueNm));
+		this.rig.addTorqueWorld(scale(forwardWorld, balanceNm + cs.rollMomentNm));
 
-		// TEMP until M9: drive yaw rate toward the command with a bounded torque.
-		const yawErrorRadS = cmd.targetYawRateRadS - yawRateRadS;
-		const yawTorqueNm = clamp((this.yawInertiaKgM2 * yawErrorRadS) / YAW_TRACK_TIME_S, -1500, 1500);
+		// Telemetry: the geometric steer angle implied by the *current* yaw rate
+		// (bicycle model, §40) plus the turn-in countersteer transient. Right
+		// after a step the yaw rate is still ~0, so the counter term dominates and
+		// the handlebars read opposite to the turn; as the turn establishes the
+		// geometric term grows and the counter term fades.
+		const geometricSteerRad = Math.atan(
+			(yawRateRadS * this.geometry.wheelbaseM) / Math.max(Math.abs(speedMps), 0.5)
+		);
+		this.state.steeringAngleRad = geometricSteerRad + cs.steerAngleRad;
+
+		// Yaw follows the lean the bike actually has; a direct term only at
+		// parking speed. Tracked with a soft time constant so heading lags lean.
+		const leanLedYawRateRadS =
+			(GRAVITY_MPS2 * Math.tan(this.state.rollRad)) / Math.max(Math.abs(speedMps), 1);
+		const targetYawRateRadS =
+			(1 - cs.speedWeight) * cmd.targetYawRateRadS + cs.speedWeight * leanLedYawRateRadS;
+		const yawTorqueNm = clamp(
+			(this.yawInertiaKgM2 * (targetYawRateRadS - yawRateRadS)) / YAW_TRACK_TIME_S,
+			-1200,
+			1200
+		);
 		this.rig.addTorqueWorld(scale(UP_WORLD, yawTorqueNm));
 
 		this.applyProvisionalCorneringForce(forwardWorld, yawRateRadS, speedMps);

@@ -121,9 +121,10 @@ describe('M7 virtual rider (headless)', () => {
 		expect(r.roll).toBeGreaterThan(0.1);
 		expect(Math.sign(r.roll)).toBe(Math.sign(r.targetLean));
 		expect(r.maxRoll).toBeLessThan(ADVENTURE_1200.physical.geometry.maxLeanAngleRad);
-		// Still turning, and speed did not scrub away.
+		// Still turning (yaw now follows the lean, so the rate is more modest),
+		// and speed did not scrub away.
 		expect(Math.sign(r.yawRate)).toBe(Math.sign(r.targetLean));
-		expect(Math.abs(r.yawRate)).toBeGreaterThan(0.2);
+		expect(Math.abs(r.yawRate)).toBeGreaterThan(0.1);
 		expect(r.speed).toBeGreaterThan(6);
 	});
 
