@@ -16,7 +16,7 @@ import type { RiderProfile } from '../RiderProfile';
 export const DEFAULT_RIDER: RiderProfile = {
 	id: 'simulation-rider',
 	name: 'Simulation Rider',
-	maxTargetLateralAccelerationMps2: 9.5,
+	maxTargetLateralAccelerationMps2: 11.0, // yaw-rate-cap headroom, not a grip claim
 
 	balance: {
 		rollKp: 3200, // §16 start: 420 — carries the lean to target now the FF fades at speed

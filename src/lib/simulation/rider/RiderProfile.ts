@@ -46,7 +46,12 @@ export interface RiderSteeringProfile {
 export interface RiderProfile {
 	id: string;
 	name: string;
-	/** Target lateral acceleration at full turn intention, m/s² (~0.92 g). */
+	/**
+	 * Ceiling on the commanded lateral acceleration (`v·ψ̇`), m/s² — it caps the
+	 * yaw-rate demand at `a_y,max / v`. Set above what the tyres actually deliver
+	 * (~0.65 g in the reduced-order model) as headroom so a fast corner isn't
+	 * clipped by the cap before grip has its say.
+	 */
 	maxTargetLateralAccelerationMps2: number;
 	balance: RiderBalanceProfile;
 	steering: RiderSteeringProfile;

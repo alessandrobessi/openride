@@ -705,8 +705,16 @@ export class Motorcycle {
 		// the yaw is the *negative* of g·tan(roll)/v.
 		const leanLedYawRateRadS =
 			(-GRAVITY_MPS2 * Math.tan(this.state.rollRad)) / Math.max(Math.abs(speedMps), 1);
+		// Once the bike is actually leaned in, pull the yaw target part-way toward
+		// the rider's curvature *demand*: the pure lean-led law settles into a
+		// shallow self-consistent equilibrium (it under-yaws for its lean), so a
+		// committed corner comes out far too wide (calibration debt, PHYSICS §31).
+		// Gated on real lean so turn-in still develops yaw *after* roll (§41).
+		const leanEstablished = clamp((Math.abs(this.state.rollRad) - 0.18) / 0.14, 0, 1);
+		const leanLedBlended =
+			leanLedYawRateRadS + leanEstablished * 0.5 * (cmd.targetYawRateRadS - leanLedYawRateRadS);
 		const targetYawRateRadS =
-			(1 - cs.speedWeight) * cmd.targetYawRateRadS + cs.speedWeight * leanLedYawRateRadS;
+			(1 - cs.speedWeight) * cmd.targetYawRateRadS + cs.speedWeight * leanLedBlended;
 		const yawTorqueNm = clamp(
 			(this.yawInertiaKgM2 * (targetYawRateRadS - yawRateRadS)) / YAW_TRACK_TIME_S,
 			-1200,

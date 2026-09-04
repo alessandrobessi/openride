@@ -29,11 +29,11 @@ export interface SteeringCommand {
 }
 
 /** Curvature demand at full intention, rad/s (before the lateral-accel cap). */
-const TURN_INTENT_YAW_GAIN = 0.8;
+const TURN_INTENT_YAW_GAIN = 1.3;
 const LOW_SPEED_YAW_GAIN = 1.8; // rad/s per unit u_s at parking speed
 const MIN_CORNER_SPEED_MPS = 1.0;
 /** How fast the rider rolls the bike into / out of lean, rad/s. */
-const MAX_LEAN_RATE_RAD_S = 0.9;
+const MAX_LEAN_RATE_RAD_S = 1.4;
 
 export class SteeringController {
 	private readonly profile: RiderProfile;
