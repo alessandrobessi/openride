@@ -1,44 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { FallRecovery, type FallRecoverySample } from './fallRecovery';
 
-const SPAWN = { positionWorldM: { x: 0, y: 1, z: 0 }, headingRad: 0 };
+const SPAWN = { positionWorldM: { x: 3, y: 1, z: -12 }, headingRad: 3.14 };
 
-const planted = (over: Partial<FallRecoverySample> = {}): FallRecoverySample => ({
-	positionWorldM: { x: 10, y: 5, z: 20 },
-	yawRad: 1.2,
-	rollRad: 0.05,
-	pitchRad: 0.02,
-	forwardSpeedMps: 12,
+const riding = (over: Partial<FallRecoverySample> = {}): FallRecoverySample => ({
+	positionWorldM: { x: 3, y: 1, z: -20 },
 	verticalSpeedMps: 0,
+	rollRad: 0.2,
 	frontContactGround: true,
 	rearContactGround: true,
 	...over
 });
 
 describe('FallRecovery', () => {
-	it('does nothing while the bike is planted and upright', () => {
+	it('does nothing while the bike is on the ground near ride height', () => {
 		const fr = new FallRecovery();
-		for (let i = 0; i < 200; i++) {
-			expect(fr.update(planted(), 1 / 120, SPAWN)).toBeNull();
+		for (let i = 0; i < 400; i++) {
+			expect(fr.update(riding({ rollRad: 0.45 }), 1 / 120, SPAWN)).toBeNull();
 		}
 	});
 
-	it('respawns at the last planted pose after a long fall, not at spawn', () => {
+	it('recovers to the spawn after a deep drop', () => {
 		const fr = new FallRecovery();
-		// Ride along, planted, at a raised part of the course.
-		const anchored = fr.update(
-			planted({ positionWorldM: { x: 40, y: 60, z: -100 } }),
-			1 / 120,
-			SPAWN
-		);
-		expect(anchored).toBeNull();
-
-		// Now off the edge and dropping.
-		let respawn = null;
-		for (let i = 0; i < 240 && !respawn; i++) {
-			respawn = fr.update(
-				planted({
-					positionWorldM: { x: 44, y: 60 - i * 0.5, z: -104 },
+		let out = null;
+		for (let i = 0; i < 240 && !out; i++) {
+			out = fr.update(
+				riding({
+					positionWorldM: { x: 40, y: 1 - i * 0.4, z: -60 },
 					frontContactGround: false,
 					rearContactGround: false
 				}),
@@ -46,62 +34,62 @@ describe('FallRecovery', () => {
 				SPAWN
 			);
 		}
-		expect(respawn).not.toBeNull();
-		expect(respawn!.positionWorldM.x).toBeCloseTo(40, 3);
-		expect(respawn!.positionWorldM.z).toBeCloseTo(-100, 3);
-		expect(respawn!.positionWorldM.y).toBeGreaterThan(60); // lifted a touch above the safe y
-		expect(respawn!.headingRad).toBeCloseTo(1.2, 3);
+		expect(out).not.toBeNull();
+		expect(out!.positionWorldM.x).toBe(SPAWN.positionWorldM.x);
+		expect(out!.positionWorldM.z).toBe(SPAWN.positionWorldM.z);
+		expect(out!.positionWorldM.y).toBeGreaterThan(SPAWN.positionWorldM.y); // lifted a touch
+		expect(out!.headingRad).toBe(SPAWN.headingRad);
 	});
 
-	it('falls back to the spawn pose if the bike was never planted', () => {
+	it('recovers a bike wheels-up on a slope that never drops far (sustained plunge)', () => {
 		const fr = new FallRecovery();
-		let respawn = null;
-		for (let i = 0; i < 240 && !respawn; i++) {
-			respawn = fr.update(
-				planted({
-					positionWorldM: { x: 0, y: -i * 0.5, z: 0 },
-					frontContactGround: false,
+		let out = null;
+		for (let i = 0; i < 400 && !out; i++) {
+			// on the terrain, one wheel skimming, sliding downhill fast but only a
+			// couple of metres below spawn height
+			out = fr.update(
+				riding({
+					positionWorldM: { x: 25, y: -1, z: -5 },
+					verticalSpeedMps: -9,
+					frontContactGround: true,
 					rearContactGround: false
 				}),
 				1 / 120,
 				SPAWN
 			);
 		}
-		expect(respawn).not.toBeNull();
-		expect(respawn!.positionWorldM.x).toBe(0);
-		expect(respawn!.positionWorldM.z).toBe(0);
+		expect(out).not.toBeNull();
 	});
 
-	it('recovers a bike left lying on its side', () => {
+	it('recovers a bike left on its side', () => {
 		const fr = new FallRecovery();
-		fr.update(planted(), 1 / 120, SPAWN); // one planted pose to anchor to
-		let respawn = null;
-		for (let i = 0; i < 600 && !respawn; i++) {
-			// on its side, wheels off the ground, near where it crashed
-			respawn = fr.update(
-				planted({ rollRad: 2.6, frontContactGround: false, rearContactGround: false }),
+		let out = null;
+		for (let i = 0; i < 600 && !out; i++) {
+			out = fr.update(
+				riding({ rollRad: 2.6, frontContactGround: false, rearContactGround: false }),
 				1 / 120,
 				SPAWN
 			);
 		}
-		expect(respawn).not.toBeNull();
+		expect(out).not.toBeNull();
 	});
 
-	it('tolerates a normal jump — a second or so airborne does not trigger', () => {
+	it('tolerates a normal jump — a second or so airborne, level, near height', () => {
 		const fr = new FallRecovery();
-		fr.update(planted(), 1 / 120, SPAWN);
-		for (let i = 0; i < 120; i++) {
-			// ~1 s airborne but level and near the last safe height
+		for (let i = 0; i < 150; i++) {
 			expect(
-				fr.update(planted({ frontContactGround: false, rearContactGround: false }), 1 / 120, SPAWN)
+				fr.update(
+					riding({ frontContactGround: false, rearContactGround: false, verticalSpeedMps: -3 }),
+					1 / 120,
+					SPAWN
+				)
 			).toBeNull();
 		}
 	});
 
 	it('recovers from a NaN position immediately', () => {
 		const fr = new FallRecovery();
-		fr.update(planted(), 1 / 120, SPAWN);
-		const out = fr.update(planted({ positionWorldM: { x: NaN, y: NaN, z: NaN } }), 1 / 120, SPAWN);
+		const out = fr.update(riding({ positionWorldM: { x: NaN, y: NaN, z: NaN } }), 1 / 120, SPAWN);
 		expect(out).not.toBeNull();
 	});
 });

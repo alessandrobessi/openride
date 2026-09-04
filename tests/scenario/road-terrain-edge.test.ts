@@ -121,10 +121,7 @@ describe('U-turn near the spawn (BLUEPRINT §42 — the rider wants another run)
 						{
 							positionWorldM: s.positionWorldM,
 							verticalSpeedMps: s.linearVelocityWorldMps.y,
-							yawRad: s.yawRad,
 							rollRad: s.rollRad,
-							pitchRad: s.pitchRad,
-							forwardSpeedMps: s.forwardSpeedMps,
 							frontContactGround: s.frontContactGround,
 							rearContactGround: s.rearContactGround
 						},
@@ -143,14 +140,22 @@ describe('U-turn near the spawn (BLUEPRINT §42 — the rider wants another run)
 		rig.motorcycle.resyncWheelsToGround();
 		rig.motorcycle.selectGear(1);
 		// Pin the throttle and hold full lock — the keyboard "U-turn at speed" that
-		// runs the bike clean off the carriageway.
+		// runs the bike clean off the carriageway, over and over.
 		step(10, () => rig.motorcycle.setControls({ ...NEUTRAL, throttle: 1, steeringInput: 1 }));
-		// Then just coast for a bit and let it settle.
-		step(4, () => rig.motorcycle.setControls(NEUTRAL));
+		let deepestY = Infinity;
+		// Then just coast and let the last respawn settle.
+		step(6, () => {
+			rig.motorcycle.setControls(NEUTRAL);
+			deepestY = Math.min(deepestY, rig.motorcycle.state.positionWorldM.y);
+		});
 
 		const s = rig.motorcycle.state;
 		expect(respawns).toBeGreaterThan(0); // it did go off and get caught
-		// Back on the road: near the spawn height, upright, on the ground, not km down.
+		// Never lost down the mountain: the bounded drop, not the hundreds of
+		// metres it used to fall.
+		expect(deepestY).toBeGreaterThan(spawn.y - 12);
+		// It ends back at the spawn on solid ground, upright.
+		expect(Math.hypot(s.positionWorldM.x - spawn.x, s.positionWorldM.z - spawn.z)).toBeLessThan(15);
 		expect(s.positionWorldM.y).toBeGreaterThan(spawn.y - 3);
 		expect(s.positionWorldM.y).toBeLessThan(spawn.y + 3);
 		expect(Math.abs(s.rollRad)).toBeLessThan(0.6);
