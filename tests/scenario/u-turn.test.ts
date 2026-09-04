@@ -109,6 +109,7 @@ describe('U-turn on the Stelvio road (real keyboard control path)', () => {
 							positionWorldM: s.positionWorldM,
 							verticalSpeedMps: s.linearVelocityWorldMps.y,
 							rollRad: s.rollRad,
+							pitchRad: s.pitchRad,
 							frontContactGround: s.frontContactGround,
 							rearContactGround: s.rearContactGround
 						},

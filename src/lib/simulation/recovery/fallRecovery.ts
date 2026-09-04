@@ -1,11 +1,12 @@
 import type { Vec3 } from '../core/math';
 
 /**
- * Off-world recovery (OPENRIDE-BLUEPRINT.md §42 — "wants another run"). v0.1 has
- * no guardrails or crash geometry, and the DEM terrain past the drivable
+ * Off-world / lost-it recovery (OPENRIDE-BLUEPRINT.md §42 — "wants another run").
+ * v0.1 has no guardrails or crash geometry, and the DEM terrain past the drivable
  * shoulder is a real mountainside, so a rider who runs wide can slide out of the
- * world. This watches the sampled chassis state and reports when the bike has
- * clearly left it, so the caller can put it back on the road at the spawn.
+ * world or get flung into a tumble. This watches the sampled chassis state and
+ * reports when it has clearly gone wrong, so the caller can put the bike back on
+ * the road at the spawn.
  *
  * Pure — no Rapier, no rendering. It deliberately does *not* try to remember a
  * "last good" pose: the only place it can be sure is on the carriageway is the
@@ -21,17 +22,20 @@ export interface FallRecoverySample {
 	/** World-frame vertical velocity, m/s (+ up). */
 	verticalSpeedMps: number;
 	rollRad: number;
+	pitchRad: number;
 	frontContactGround: boolean;
 	rearContactGround: boolean;
 }
 
 /** Dropped this far below the spawn height → off the world (the route climbs from the spawn). */
 const FALL_DEPTH_M = 8;
-/** No wheel touching for this long → stuck airborne (a big jump still lands inside this). */
-const AIRBORNE_LIMIT_S = 4;
-/** Past this roll for this long → lying on its side and not coming back. */
-const INVERTED_ROLL_RAD = 1.92; // ~110°
-const INVERTED_LIMIT_S = 2.5;
+/** Airborne this long → stuck off the deck (a big jump lands well inside this). A brief
+ *  ground graze during a tumble doesn't reset the clock, it just pauses it. */
+const AIRBORNE_LIMIT_S = 2.5;
+/** Roll or pitch past a plausible cornering / wheelie attitude, held → the rider lost it. */
+const WIPEOUT_ROLL_RAD = 1.2; // ~69°
+const WIPEOUT_PITCH_RAD = 0.7; // ~40°
+const WIPEOUT_LIMIT_S = 0.8;
 /** Dropping faster than a cliff fall, sustained → gone over the edge (a steep pass
  *  descent or a tank-slapper twitch never holds this). */
 const PLUNGE_SPEED_MPS = -12;
@@ -39,7 +43,7 @@ const PLUNGE_LIMIT_S = 1.2;
 
 export class FallRecovery {
 	private airborneS = 0;
-	private invertedS = 0;
+	private wipeoutS = 0;
 	private plungeS = 0;
 
 	/**
@@ -59,21 +63,26 @@ export class FallRecovery {
 			Number.isFinite(p.z) &&
 			Number.isFinite(sample.verticalSpeedMps);
 
-		this.airborneS = grounded ? 0 : this.airborneS + dtS;
-		this.invertedS = Math.abs(sample.rollRad) > INVERTED_ROLL_RAD ? this.invertedS + dtS : 0;
+		// Airborne time: pause (don't reset) on a graze so a bouncing tumble still trips it.
+		this.airborneS = grounded ? Math.max(0, this.airborneS - dtS * 2) : this.airborneS + dtS;
+
+		const badAttitude =
+			Math.abs(sample.rollRad) > WIPEOUT_ROLL_RAD || Math.abs(sample.pitchRad) > WIPEOUT_PITCH_RAD;
+		this.wipeoutS = badAttitude ? this.wipeoutS + dtS : 0;
+
 		this.plungeS = finite && sample.verticalSpeedMps < PLUNGE_SPEED_MPS ? this.plungeS + dtS : 0;
 
-		const wentOffTheWorld =
+		const lostIt =
 			!finite ||
 			p.y < spawn.positionWorldM.y - FALL_DEPTH_M ||
 			this.airborneS > AIRBORNE_LIMIT_S ||
-			this.invertedS > INVERTED_LIMIT_S ||
+			this.wipeoutS > WIPEOUT_LIMIT_S ||
 			this.plungeS > PLUNGE_LIMIT_S;
 
-		if (!wentOffTheWorld) return null;
+		if (!lostIt) return null;
 
 		this.airborneS = 0;
-		this.invertedS = 0;
+		this.wipeoutS = 0;
 		this.plungeS = 0;
 		return {
 			positionWorldM: {

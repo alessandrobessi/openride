@@ -102,6 +102,8 @@ const RIDER_ROLL_MOMENT_MAX_NM = 2000;
 const SUSPENSION_VEL_LIMIT_MPS = 5;
 /** A motorcycle chassis physically can't rotate faster than this about any axis. */
 const CHASSIS_MAX_ANGULAR_SPEED_RAD_S = 6;
+/** Most normal load one wheel can transmit to the chassis — ~6× the full-bike static load. */
+const WHEEL_NORMAL_LOAD_MAX_N = 20_000;
 
 /** Below this speed, velocity-opposing forces (drag, rolling resistance, brakes) are gated off. */
 const SPEED_DEADBAND_MPS = 0.03;
@@ -605,7 +607,13 @@ export class Motorcycle {
 		let contactWorld = strutTopWorld;
 		let normalWorld = UP_WORLD;
 
-		if (hit) {
+		// A raycast hit on a near-vertical face (the cut side of the road-ribbon
+		// edge, a terrain-heightfield wall) is the wheel jammed against a cliff, not
+		// resting on the ground — pushing "up" the (nearly horizontal) contact
+		// normal there catapults the bike. Only accept a hit that faces up.
+		const onGround = hit ? hit.normalWorld.y > 0.4 : false;
+
+		if (hit && onGround) {
 			const rawCompressionM = clampCompressionM(
 				this.zeroCompressionReachM - hit.distanceM,
 				wheel.suspension
@@ -631,8 +639,15 @@ export class Motorcycle {
 			-SUSPENSION_VEL_LIMIT_MPS,
 			SUSPENSION_VEL_LIMIT_MPS
 		);
+		// Hard ceiling on the normal load one wheel can put into the chassis. The
+		// spring + bump stop can otherwise compute ~100 kN when a raycast steps off
+		// a mesh edge and the strut bottoms out — a catapult, not a landing. A real
+		// bike tyre/fork transmits maybe 10× static at the very most.
 		const forceN = grounded
-			? suspensionForceN({ compressionM, compressionVelMps }, wheel.suspension)
+			? Math.min(
+					suspensionForceN({ compressionM, compressionVelMps }, wheel.suspension),
+					WHEEL_NORMAL_LOAD_MAX_N
+				)
 			: 0;
 
 		if (forceN > 0) {

@@ -7,6 +7,7 @@ const riding = (over: Partial<FallRecoverySample> = {}): FallRecoverySample => (
 	positionWorldM: { x: 3, y: 1, z: -20 },
 	verticalSpeedMps: 0,
 	rollRad: 0.2,
+	pitchRad: 0,
 	frontContactGround: true,
 	rearContactGround: true,
 	...over

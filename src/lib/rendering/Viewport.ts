@@ -596,6 +596,7 @@ export class Viewport {
 						positionWorldM: s.positionWorldM,
 						verticalSpeedMps: s.linearVelocityWorldMps.y,
 						rollRad: s.rollRad,
+						pitchRad: s.pitchRad,
 						frontContactGround: s.frontContactGround,
 						rearContactGround: s.rearContactGround
 					},
