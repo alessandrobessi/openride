@@ -424,7 +424,11 @@ export class Motorcycle {
 		// replacing the yaw-led mechanism is a later refinement (§31).
 		const cgLateralSpeed = dot(this.state.linearVelocityWorldMps, rightHoriz);
 		const centripetalN = -this.massKg * this.state.forwardSpeedMps * this.state.yawRateRadS;
-		const slipDampN = (-this.massKg * cgLateralSpeed) / 2.0;
+		// Side-slip damping is for high-speed weave, not a parking-lot pivot: fade
+		// it out below ~6 m/s so a full-lock U-turn traces its tight arc instead of
+		// scrubbing all its speed off and grinding to a halt mid-turn.
+		const slipDampFade = clamp(Math.abs(this.state.forwardSpeedMps) / 6, 0, 1);
+		const slipDampN = (-this.massKg * cgLateralSpeed * slipDampFade) / 2.0;
 
 		const totalLoadN = Math.max(this.state.frontNormalLoadN + this.state.rearNormalLoadN, 1);
 		// The demand can't exceed what the tyres could ever deliver — a stray yaw

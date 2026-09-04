@@ -50,7 +50,7 @@ describe('FallRecovery', () => {
 			out = fr.update(
 				riding({
 					positionWorldM: { x: 25, y: -1, z: -5 },
-					verticalSpeedMps: -9,
+					verticalSpeedMps: -14,
 					frontContactGround: true,
 					rearContactGround: false
 				}),

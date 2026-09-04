@@ -25,16 +25,17 @@ export interface FallRecoverySample {
 	rearContactGround: boolean;
 }
 
-/** Dropped this far below the spawn height → off the world. */
+/** Dropped this far below the spawn height → off the world (the route climbs from the spawn). */
 const FALL_DEPTH_M = 8;
-/** No wheel touching for this long → stuck airborne (a real jump lands well inside this). */
-const AIRBORNE_LIMIT_S = 3;
+/** No wheel touching for this long → stuck airborne (a big jump still lands inside this). */
+const AIRBORNE_LIMIT_S = 4;
 /** Past this roll for this long → lying on its side and not coming back. */
 const INVERTED_ROLL_RAD = 1.92; // ~110°
 const INVERTED_LIMIT_S = 2.5;
-/** Falling faster than any road descent, sustained → sliding down the mountainside. */
-const PLUNGE_SPEED_MPS = -6;
-const PLUNGE_LIMIT_S = 1.5;
+/** Dropping faster than a cliff fall, sustained → gone over the edge (a steep pass
+ *  descent or a tank-slapper twitch never holds this). */
+const PLUNGE_SPEED_MPS = -12;
+const PLUNGE_LIMIT_S = 1.2;
 
 export class FallRecovery {
 	private airborneS = 0;
