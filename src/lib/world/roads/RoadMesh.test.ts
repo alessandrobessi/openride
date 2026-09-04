@@ -31,6 +31,24 @@ describe('Stelvio road mesh (M16)', () => {
 		expect(Math.max(...m.indices)).toBeLessThan(index.surface.vertexCount);
 	});
 
+	it('surface triangles wind so the road faces up (THREE FrontSide would cull it otherwise)', () => {
+		const m = parseSurfaceMesh(readAB(index.surface.file));
+		const p = m.positions;
+		let up = 0;
+		for (let t = 0; t < m.indices.length; t += 3) {
+			const a = m.indices[t] * 3;
+			const b = m.indices[t + 1] * 3;
+			const c = m.indices[t + 2] * 3;
+			// y of (v1 - v0) × (v2 - v0)
+			const ux = p[b] - p[a];
+			const uz = p[b + 2] - p[a + 2];
+			const vx = p[c] - p[a];
+			const vz = p[c + 2] - p[a + 2];
+			if (uz * vx - ux * vz > 0) up++;
+		}
+		expect(up).toBe(m.indices.length / 3); // every triangle
+	});
+
 	it('collision binary is a valid trimesh, wider than the visual surface', () => {
 		const s = parseSurfaceMesh(readAB(index.surface.file));
 		const c = parseCollisionMesh(readAB(index.collision.file));

@@ -32,7 +32,7 @@ export const DEFAULT_RIDER: RiderProfile = {
 		leanKd: 18,
 		countersteerGain: 18,
 		lowSpeedTransitionStartMps: 3,
-		lowSpeedTransitionEndMps: 10,
+		lowSpeedTransitionEndMps: 16,
 		maxSteeringTorqueNm: 35
 	}
 };

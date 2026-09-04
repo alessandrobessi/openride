@@ -64,8 +64,11 @@ function buildRibbon(cl: Pt[], hw: number, withAttribs: boolean): Ribbon {
 			r.uvs.push(0, dist / (hw * 2), 1, dist / (hw * 2));
 		}
 		if (i > 0) {
+			// Wind CCW seen from above (+y) so the surface faces up — otherwise
+			// THREE's default FrontSide culls the whole road and you see straight
+			// through to the terrain. (Rapier's trimesh collider is winding-agnostic.)
 			const a = (i - 1) * 2;
-			r.indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+			r.indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
 		}
 	}
 	return r;
