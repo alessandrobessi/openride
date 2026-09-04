@@ -144,6 +144,19 @@ export class RapierWorld {
 		this.world.getRigidBody(handle).setAngvel(angularVelocityRadS, true);
 	}
 
+	/** Clamp each component of a body's angular velocity to ±`maxRadS`. */
+	limitAngularSpeed(handle: number, maxRadS: number): void {
+		const body = this.world.getRigidBody(handle);
+		const w = body.angvel();
+		const clampC = (c: number) => (c > maxRadS ? maxRadS : c < -maxRadS ? -maxRadS : c);
+		const cx = clampC(w.x);
+		const cy = clampC(w.y);
+		const cz = clampC(w.z);
+		if (cx !== w.x || cy !== w.y || cz !== w.z) {
+			body.setAngvel({ x: cx, y: cy, z: cz }, true);
+		}
+	}
+
 	/**
 	 * Hard-place a body upright at `positionM` facing `headingRad` with all motion
 	 * and pending forces zeroed — a respawn after the rider has gone off the world

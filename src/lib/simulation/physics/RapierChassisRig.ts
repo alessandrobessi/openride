@@ -61,6 +61,10 @@ export class RapierChassisRig implements ChassisRig {
 		this.world.setBodyPose(this.handle, positionWorldM, headingRad);
 	}
 
+	limitAngularSpeed(maxRadS: number): void {
+		this.world.limitAngularSpeed(this.handle, maxRadS);
+	}
+
 	clearAccumulators(): void {
 		this.world.resetAccumulators(this.handle);
 	}

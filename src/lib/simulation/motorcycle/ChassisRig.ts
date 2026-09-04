@@ -52,6 +52,13 @@ export interface ChassisRig {
 	respawn(positionWorldM: Vec3, headingRad: number): void;
 
 	/**
+	 * Clamp each component of the chassis angular velocity to ±`maxRadS`. A safety
+	 * net: a bad contact against the road/terrain trimesh edge can otherwise spin
+	 * the body to non-physical rates (a motorcycle chassis simply can't).
+	 */
+	limitAngularSpeed(maxRadS: number): void;
+
+	/**
 	 * Zero the accumulated force/torque on the chassis. Called at the start of
 	 * each step so every step recomputes its whole force budget from scratch
 	 * (AGENTS.md §81 — one owner per force, no leftover accumulation).

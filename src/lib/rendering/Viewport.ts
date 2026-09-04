@@ -169,6 +169,17 @@ export class Viewport {
 		this.resizeObserver = new ResizeObserver(() => this.resize());
 		this.resizeObserver.observe(this.canvas);
 		this.resize();
+
+		if (import.meta.env.DEV) {
+			// Dev-only: lets a headless/MCP browser pump frames deterministically
+			// when rAF is paused (hidden tab). No effect on the shipped build.
+			(globalThis as unknown as { __viewport?: Viewport }).__viewport = this;
+		}
+	}
+
+	/** Dev-only: advance rendering + physics by one synthetic frame of `dtS`. */
+	debugTick(dtS = 1 / 60): void {
+		this.renderFrame({ frameDeltaS: dtS, elapsedS: 0, fps: 0 });
 	}
 
 	get frames(): number {

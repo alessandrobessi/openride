@@ -100,6 +100,8 @@ const YAW_TRACK_TIME_S = 0.12;
 const RIDER_ROLL_MOMENT_MAX_NM = 2000;
 /** Real dampers don't move faster than this; clamp keeps the explicit integrator sane. */
 const SUSPENSION_VEL_LIMIT_MPS = 5;
+/** A motorcycle chassis physically can't rotate faster than this about any axis. */
+const CHASSIS_MAX_ANGULAR_SPEED_RAD_S = 6;
 
 /** Below this speed, velocity-opposing forces (drag, rolling resistance, brakes) are gated off. */
 const SPEED_DEADBAND_MPS = 0.03;
@@ -289,6 +291,9 @@ export class Motorcycle {
 	/** One fixed simulation step. Rapier is stepped by the caller afterwards. */
 	update(dtS: number): void {
 		this.rig.clearAccumulators();
+		// A trimesh-edge contact can fling the chassis into a non-physical spin;
+		// cap it before it feeds back through the rider/tyre model.
+		this.rig.limitAngularSpeed(CHASSIS_MAX_ANGULAR_SPEED_RAD_S);
 		this.syncPose();
 
 		const forwardHoriz = this.forwardHorizontal();

@@ -129,12 +129,19 @@ describe('U-turn on the Stelvio road (real keyboard control path)', () => {
 		run(4, () => ['w']); // ride out to ~45 km/h
 		prevYaw = rig.motorcycle.state.yawRad;
 		turnedRad = 0;
-		// Brake right down to a walking-pace crawl (what you'd actually do).
-		for (let i = 0; i < 400 && rig.motorcycle.state.forwardSpeedMps * 3.6 > 8; i++) {
+		// Brake down to a walking-pace crawl (what you'd actually do).
+		for (let i = 0; i < 400 && rig.motorcycle.state.forwardSpeedMps * 3.6 > 13; i++) {
 			run(FRAME_S, () => ['s']);
 		}
 		peakOffCentreM = 0; // measure the excursion of the U-turn itself
-		run(7, (deg) => (Math.abs(deg) < 170 ? ['a'] : [])); // full lock until nearly round
+		// Full lock, feathering the throttle to hold the crawl through the turn.
+		run(9, (deg) =>
+			Math.abs(deg) < 175
+				? rig.motorcycle.state.forwardSpeedMps * 3.6 < 12
+					? ['a', 'w']
+					: ['a']
+				: []
+		);
 		const cameAroundKmh = rig.motorcycle.state.forwardSpeedMps * 3.6;
 		run(5, () => ['w']); // straighten and ride away
 

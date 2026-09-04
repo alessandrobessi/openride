@@ -54,7 +54,7 @@ export const ASSISTS_OFF: AssistConfig = {
 		activationSlip: 0.14,
 		torqueReductionGain: 4.0
 	},
-	wheelieControl: { enabled: false, minimumFrontLoadFraction: 0.08 }
+	wheelieControl: { enabled: false, minimumFrontLoadFraction: 0.25 }
 };
 
 export const DEFAULT_ASSISTS: AssistConfig = {
@@ -76,6 +76,6 @@ export const DEFAULT_ASSISTS: AssistConfig = {
 	},
 	wheelieControl: {
 		enabled: true,
-		minimumFrontLoadFraction: 0.08
+		minimumFrontLoadFraction: 0.25
 	}
 };

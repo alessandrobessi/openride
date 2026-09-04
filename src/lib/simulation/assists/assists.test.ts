@@ -64,8 +64,9 @@ describe('WheelieControl', () => {
 	});
 
 	it('cuts torque toward zero as the front load fraction approaches the limit', () => {
-		const near = wc().limit(400, 0.1);
-		const atLimit = wc().limit(400, 0.08);
+		const minFrac = DEFAULT_ASSISTS.wheelieControl.minimumFrontLoadFraction;
+		const near = wc().limit(400, minFrac + 0.05); // inside the cut band
+		const atLimit = wc().limit(400, minFrac); // at the limit
 		expect(near).toBeLessThan(400);
 		expect(atLimit).toBeLessThan(near);
 		expect(atLimit).toBeCloseTo(0, 1);

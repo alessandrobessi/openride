@@ -30,7 +30,13 @@ export interface SteeringCommand {
 
 /** Curvature demand at full intention, rad/s (before the lateral-accel cap). */
 const TURN_INTENT_YAW_GAIN = 1.3;
-const LOW_SPEED_YAW_GAIN = 1.8; // rad/s per unit u_s at parking speed
+/**
+ * Tightest full-lock turn radius at walking pace, m. Parking-speed steering
+ * commands `u_s · v / R_min` — a real tight *arc*, so the yaw rate scales with
+ * speed. (The old form was a fixed `u_s · k` regardless of speed, which spun a
+ * near-stationary bike like a turntable on any keyboard tap.)
+ */
+const PARKING_MIN_RADIUS_M = 3.4;
 const MIN_CORNER_SPEED_MPS = 1.0;
 /** How fast the rider rolls the bike into / out of lean, rad/s. */
 const MAX_LEAN_RATE_RAD_S = 1.4;
@@ -62,14 +68,17 @@ export class SteeringController {
 		const yawRateCap = ayMax / Math.max(speed, MIN_CORNER_SPEED_MPS);
 		let targetYawRateRadS = clamp(us * TURN_INTENT_YAW_GAIN, -yawRateCap, yawRateCap);
 
-		// Low speed: blend toward direct (parking-lot) steering (§45).
+		// Low speed: blend toward direct (parking-lot) steering (§45) — a tight but
+		// finite-radius arc whose yaw rate scales with speed, still capped by the
+		// rider's lateral-accel limit so it never asks for impossible grip.
+		const parkingYawRateRadS = clamp((us * speed) / PARKING_MIN_RADIUS_M, -yawRateCap, yawRateCap);
 		const highSpeedBlend = smoothstep(
 			this.profile.steering.lowSpeedTransitionStartMps,
 			this.profile.steering.lowSpeedTransitionEndMps,
 			speed
 		);
 		targetYawRateRadS =
-			(1 - highSpeedBlend) * (us * LOW_SPEED_YAW_GAIN) + highSpeedBlend * targetYawRateRadS;
+			(1 - highSpeedBlend) * parkingYawRateRadS + highSpeedBlend * targetYawRateRadS;
 
 		// Target lean DERIVED from the cornering demand — varies with speed/radius.
 		// The rider leans *into* the turn: a left turn (positive yaw rate in this

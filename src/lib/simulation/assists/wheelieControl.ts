@@ -21,8 +21,9 @@ export class WheelieControl {
 			return driveTorqueNm;
 		}
 		const minFrac = this.config.minimumFrontLoadFraction;
-		// 0 at/below the limit, ramping to full torque by ~2.5× the limit.
-		const factor = smoothstep(minFrac, minFrac * 2.5, frontLoadFraction);
+		// 0 at/below the limit, back to full torque within a narrow band above it
+		// (so it only bites when the front is genuinely going light, not always).
+		const factor = smoothstep(minFrac, minFrac + 0.12, frontLoadFraction);
 		this.active = factor < 0.999;
 		return driveTorqueNm * factor;
 	}
