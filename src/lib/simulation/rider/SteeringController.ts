@@ -47,6 +47,11 @@ export class SteeringController {
 		this.maxLeanRad = maxLeanRad;
 	}
 
+	/** Drop the slew-limited lean target (after a respawn). */
+	reset(): void {
+		this.currentTargetLeanRad = 0;
+	}
+
 	command(turnIntention: number, speedMps: number, dtS: number): SteeringCommand {
 		const us = clamp(turnIntention, -1, 1);
 		const speed = Math.abs(speedMps);

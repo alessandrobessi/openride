@@ -57,6 +57,10 @@ export class RapierChassisRig implements ChassisRig {
 		this.world.addTorqueWorld(this.handle, torqueNm);
 	}
 
+	respawn(positionWorldM: Vec3, headingRad: number): void {
+		this.world.setBodyPose(this.handle, positionWorldM, headingRad);
+	}
+
 	clearAccumulators(): void {
 		this.world.resetAccumulators(this.handle);
 	}

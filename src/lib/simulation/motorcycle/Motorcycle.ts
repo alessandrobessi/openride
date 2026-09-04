@@ -259,6 +259,33 @@ export class Motorcycle {
 		this.state.engineOmegaRadS = this.engine.omegaRadS;
 	}
 
+	/**
+	 * Put the bike back on the road after it has left the world (no barrier /
+	 * crash geometry in v0.1): upright at `positionWorldM` facing `headingRad`,
+	 * stopped, in neutral, engine idling, wheel/tyre/transfer state cleared.
+	 */
+	respawn(positionWorldM: Vec3, headingRad: number): void {
+		this.rig.respawn(positionWorldM, headingRad);
+		this.rig.clearAccumulators();
+		this.frontWheelOmegaRadS = 0;
+		this.rearWheelOmegaRadS = 0;
+		this.frontFxN = 0;
+		this.rearFxN = 0;
+		this.lastRearFxN = 0;
+		this.frontCompressionM = 0;
+		this.rearCompressionM = 0;
+		this.longitudinalAccelMps2 = 0;
+		this.drivetrain.gearbox.selectGear(0);
+		this.engine.restart();
+		this.steeringController.reset();
+		this.syncPose();
+		this.state.forwardSpeedMps = 0;
+		this.state.longitudinalAccelMps2 = 0;
+		this.state.engineStalled = false;
+		this.state.engineRPM = this.engine.rpm;
+		this.state.engineOmegaRadS = this.engine.omegaRadS;
+	}
+
 	/** One fixed simulation step. Rapier is stepped by the caller afterwards. */
 	update(dtS: number): void {
 		this.rig.clearAccumulators();

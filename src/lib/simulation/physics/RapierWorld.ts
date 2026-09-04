@@ -144,6 +144,22 @@ export class RapierWorld {
 		this.world.getRigidBody(handle).setAngvel(angularVelocityRadS, true);
 	}
 
+	/**
+	 * Hard-place a body upright at `positionM` facing `headingRad` with all motion
+	 * and pending forces zeroed — a respawn after the rider has gone off the world
+	 * (there is no crash geometry / barrier in v0.1).
+	 */
+	setBodyPose(handle: number, positionM: Vec3, headingRad: number): void {
+		const body = this.world.getRigidBody(handle);
+		const h = headingRad / 2;
+		body.setTranslation(positionM, true);
+		body.setRotation({ x: 0, y: Math.sin(h), z: 0, w: Math.cos(h) }, true);
+		body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+		body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+		body.resetForces(false);
+		body.resetTorques(false);
+	}
+
 	angularVelocity(handle: number): Vec3 {
 		const w = this.world.getRigidBody(handle).angvel();
 		return { x: w.x, y: w.y, z: w.z };

@@ -8,6 +8,7 @@ import { createMotorcycleRig } from '$lib/simulation/physics/createMotorcycleRig
 import { SimulationLoop } from '$lib/simulation/core/SimulationLoop';
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
 import { DEFAULT_ASSISTS } from '$lib/simulation/assists/AssistConfig';
+import { FallRecovery, type FallRecoveryPose } from '$lib/simulation/recovery/fallRecovery';
 
 const FRAME_S = 1 / 60;
 const NEUTRAL = { throttle: 0, clutch: 1, frontBrake: 0, rearBrake: 0, steeringInput: 0 };
@@ -95,6 +96,65 @@ describe('U-turn near the spawn (BLUEPRINT §42 — the rider wants another run)
 		expect(startY - minY).toBeLessThan(0.4); // no drop off a ribbon edge
 		// No raycast-seam bump-stop spike (the old failure was ~100 kN).
 		expect(peakLoadN).toBeLessThan(20_000);
+		rig.world.dispose();
+	});
+
+	it('a rider who runs wide off the world is recovered onto the road, not lost down the mountain', async () => {
+		const rig = await roadWithTerrainRig();
+		const loop = new SimulationLoop({ fixedDtS: 1 / 120 });
+		const spawn = meshIndex.spawn;
+		const spawnPose: FallRecoveryPose = {
+			positionWorldM: { x: spawn.x, y: spawn.y, z: spawn.z },
+			headingRad: spawn.headingRad
+		};
+		const recovery = new FallRecovery();
+		let respawns = 0;
+
+		const step = (seconds: number, drive: () => void) => {
+			for (let t = 0; t < seconds; t += FRAME_S) {
+				loop.advance(FRAME_S, (dt) => {
+					drive();
+					rig.motorcycle.update(dt);
+					rig.world.step(dt);
+					const s = rig.motorcycle.state;
+					const out = recovery.update(
+						{
+							positionWorldM: s.positionWorldM,
+							verticalSpeedMps: s.linearVelocityWorldMps.y,
+							yawRad: s.yawRad,
+							rollRad: s.rollRad,
+							pitchRad: s.pitchRad,
+							forwardSpeedMps: s.forwardSpeedMps,
+							frontContactGround: s.frontContactGround,
+							rearContactGround: s.rearContactGround
+						},
+						dt,
+						spawnPose
+					);
+					if (out) {
+						rig.motorcycle.respawn(out.positionWorldM, out.headingRad);
+						respawns++;
+					}
+				});
+			}
+		};
+
+		step(2, () => rig.motorcycle.setControls(NEUTRAL));
+		rig.motorcycle.resyncWheelsToGround();
+		rig.motorcycle.selectGear(1);
+		// Pin the throttle and hold full lock — the keyboard "U-turn at speed" that
+		// runs the bike clean off the carriageway.
+		step(10, () => rig.motorcycle.setControls({ ...NEUTRAL, throttle: 1, steeringInput: 1 }));
+		// Then just coast for a bit and let it settle.
+		step(4, () => rig.motorcycle.setControls(NEUTRAL));
+
+		const s = rig.motorcycle.state;
+		expect(respawns).toBeGreaterThan(0); // it did go off and get caught
+		// Back on the road: near the spawn height, upright, on the ground, not km down.
+		expect(s.positionWorldM.y).toBeGreaterThan(spawn.y - 3);
+		expect(s.positionWorldM.y).toBeLessThan(spawn.y + 3);
+		expect(Math.abs(s.rollRad)).toBeLessThan(0.6);
+		expect(s.frontContactGround || s.rearContactGround).toBe(true);
 		rig.world.dispose();
 	});
 });

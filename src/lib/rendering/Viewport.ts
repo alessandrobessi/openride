@@ -23,6 +23,7 @@ import {
 } from '$lib/simulation/physics/createMotorcycleRig';
 import { ADVENTURE_1200 } from '$lib/simulation/motorcycle/configs/adventure-1200';
 import type { MotorcycleControls } from '$lib/simulation/motorcycle/Motorcycle';
+import { FallRecovery, type FallRecoveryPose } from '$lib/simulation/recovery/fallRecovery';
 import { LocalFrame, STELVIO_ORIGIN } from '$lib/world/geo/enu';
 import { fetchWorldManifest, type WorldManifest } from '$lib/world/WorldManifest';
 import { fetchRoadMesh, type LoadedRoadMesh } from '$lib/world/roads/loadRoadMesh';
@@ -136,6 +137,11 @@ export class Viewport {
 	private roadFurniture: RoadFurniture | undefined;
 	private vegetation: Vegetation | undefined;
 	private buildings: Buildings | undefined;
+
+	/** Off-world recovery — respawn the rider on the road after a fall (v0.1 has no barriers). */
+	private readonly fallRecovery = new FallRecovery();
+	private spawnPose: FallRecoveryPose = { positionWorldM: { x: 0, y: 1, z: 0 }, headingRad: 0 };
+	private cameraNeedsSnap = false;
 
 	private frameCount = 0;
 	private disposed = false;
@@ -274,6 +280,14 @@ export class Viewport {
 				withGround: false,
 				spawn: manifest.spawn
 			});
+			this.spawnPose = {
+				positionWorldM: {
+					x: manifest.spawn.x,
+					y: manifest.spawn.y ?? 1,
+					z: manifest.spawn.z
+				},
+				headingRad: manifest.spawn.headingRad ?? 0
+			};
 			this.addRoadSurface(road);
 		} else {
 			rig = await createMotorcycleRig(ADVENTURE_1200);
@@ -563,8 +577,35 @@ export class Viewport {
 				motorcycle.update(dtS);
 				world.step(dtS);
 				this.currTransform = world.getTransform(chassisHandle);
+
+				// Put the rider back on the road if they've fallen out of the world.
+				const s = motorcycle.state;
+				const respawn = this.fallRecovery.update(
+					{
+						positionWorldM: s.positionWorldM,
+						verticalSpeedMps: s.linearVelocityWorldMps.y,
+						yawRad: s.yawRad,
+						rollRad: s.rollRad,
+						pitchRad: s.pitchRad,
+						forwardSpeedMps: s.forwardSpeedMps,
+						frontContactGround: s.frontContactGround,
+						rearContactGround: s.rearContactGround
+					},
+					dtS,
+					this.spawnPose
+				);
+				if (respawn) {
+					motorcycle.respawn(respawn.positionWorldM, respawn.headingRad);
+					this.currTransform = world.getTransform(chassisHandle);
+					this.prevTransform = this.currTransform;
+					this.cameraNeedsSnap = true;
+				}
 			});
 			applyInterpolatedTransform(this.chassisMesh, this.prevTransform, this.currTransform, alpha);
+			if (this.cameraNeedsSnap) {
+				this.cameraNeedsSnap = false;
+				this.fpCamera.reset(this.chassisMesh.position, this.chassisMesh.quaternion);
+			}
 			const fc = motorcycle.debug.frontContactWorldM;
 			const rc = motorcycle.debug.rearContactWorldM;
 			this.frontContactMarker?.position.set(fc.x, fc.y, fc.z);

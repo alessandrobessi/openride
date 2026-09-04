@@ -45,6 +45,13 @@ export interface ChassisRig {
 	addTorqueWorld(torqueNm: Vec3): void;
 
 	/**
+	 * Hard-place the chassis upright at `positionWorldM` facing `headingRad`, with
+	 * all motion and pending forces zeroed. Used to recover the bike after it has
+	 * left the world — there is no barrier / crash geometry in v0.1.
+	 */
+	respawn(positionWorldM: Vec3, headingRad: number): void;
+
+	/**
 	 * Zero the accumulated force/torque on the chassis. Called at the start of
 	 * each step so every step recomputes its whole force budget from scratch
 	 * (AGENTS.md §81 — one owner per force, no leftover accumulation).
