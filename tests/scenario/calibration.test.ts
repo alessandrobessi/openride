@@ -12,14 +12,10 @@ import type { Motorcycle } from '$lib/simulation/motorcycle/Motorcycle';
  * simulation — never hard-coded outcomes. Tune parameters (the config), not
  * these targets.
  *
- * OPEN CALIBRATION DEBT (tracked as `it.todo` below):
- *   - 0–100 km/h is slow (~9–10 s vs the 3.5–4.5 s target). The launch itself
- *     is healthy (~0.55 g in first gear); acceleration falls away as the revs
- *     build because the clutch slip-torque capacity (`maxTorqueNm` 180) and the
- *     `k_c` stiffness leave the engine loosely coupled to the driveline through
- *     the gears. Needs a powertrain-coupling pass, not a single number.
- *   - Steady corner lean sits ~6–7° above atan(v²/rg) — the reduced-order
- *     yaw-led lateral model (MOTORCYCLE-PHYSICS.md §31, sanctioned for v1).
+ * The full v0.1 calibration gate now passes: 0–100 km/h (backward-Euler lock-up
+ * clutch) and steady corner lean (measured at a genuine constant-radius steady
+ * state — the yaw-led lateral model of MOTORCYCLE-PHYSICS.md §31 tracks
+ * atan(v²/rg) to within ~1.5° once the transient has settled).
  */
 
 const FRAME_S = 1 / 60;
@@ -202,5 +198,41 @@ describe('v0.1 calibration', () => {
 		rig.world.dispose();
 	});
 
-	it.todo('steady corner lean within ~2° of atan(v²/rg) (needs the camber/slip lateral model)');
+	it('holds a steady corner lean within ~2° of atan(v²/rg) across speeds', async () => {
+		for (const [targetSpeed, steer] of [
+			[16, 0.22],
+			[22, 0.18],
+			[28, 0.14]
+		] as const) {
+			const { rig, step } = await makeRig();
+			rig.world.setLinearVelocity(rig.chassisHandle, { x: 0, y: 0, z: targetSpeed });
+			rig.motorcycle.resyncWheelsToGround();
+			rig.motorcycle.selectGear(4);
+			// Hold the entry speed with a light proportional throttle while a mild,
+			// fixed steering input settles the bike into a constant-radius arc.
+			const drive = (m: Motorcycle) => {
+				const err = targetSpeed - m.state.forwardSpeedMps;
+				m.setControls({
+					...NEUTRAL,
+					throttle: Math.max(0, Math.min(0.6, 0.2 + err * 0.05)),
+					steeringInput: steer
+				});
+			};
+			step(16, drive);
+			let sumRoll = 0;
+			let sumIdeal = 0;
+			let n = 0;
+			step(2, (m) => {
+				drive(m);
+				const s = m.state;
+				const radius = s.forwardSpeedMps / Math.max(Math.abs(s.yawRateRadS), 1e-3);
+				sumIdeal += Math.atan((s.forwardSpeedMps * s.forwardSpeedMps) / (radius * G));
+				sumRoll += Math.abs(s.rollRad);
+				n++;
+			});
+			const leanErrDeg = (Math.abs(sumRoll / n - sumIdeal / n) * 180) / Math.PI;
+			expect(leanErrDeg).toBeLessThan(2);
+			rig.world.dispose();
+		}
+	});
 });
